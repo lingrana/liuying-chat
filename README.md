@@ -112,7 +112,7 @@ firefly-chat/
 
 推荐使用 Node.js 18 或更新版本。
 
-部署到服务器或 1Panel 时：
+部署到服务器时：
 
 1. 上传项目目录。
 2. 执行 `npm install`。
