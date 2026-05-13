@@ -1,0 +1,9 @@
+{
+  "name": "firefly-chat",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Firefly themed chat site with visitor stats and configurable OpenAI-compatible API backend.",
+  "scripts": {
+    "start": "node server.js"
+  }
+}

@@ -1,0 +1,13 @@
+node_modules/
+npm-debug.log*
+
+server.out.log
+server.err.log
+*.log
+
+data/config.json
+data/users/
+data/songs/
+
+.env
+.env.*
