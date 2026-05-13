@@ -119,10 +119,3 @@ firefly-chat/
 3. 设置启动命令为 `npm start`。
 4. 设置环境变量：`HOST=0.0.0.0`、`PORT=3200`、`CONFIG_SECRET=固定随机字符串`。
 5. 使用 Nginx、1Panel 或其他反向代理将域名代理到 `http://127.0.0.1:3200`。
-
-## Notes
-
-- 本项目使用 Node.js 原生 HTTP 服务，不依赖数据库。
-- 对话与图片能力取决于后台配置的 OpenAI 兼容接口。
-- 默认不会内置真实 API Key。
-- `data/config.json`、用户数据和上传歌曲默认不会提交到 Git。
