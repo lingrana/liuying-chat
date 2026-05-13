@@ -1237,9 +1237,10 @@
           </div>
         </div>
         <div class="metric-grid">
-          <div class="metric-item">
+          <div class="metric-item" style="position:relative;">
             <span class="metric-label">对话 Token</span>
             <strong class="metric-value accent" id="tokenTotal">0</strong>
+            <span class="cache-badge" id="cacheBadge" title="缓存命中率" style="position:absolute; top:0; right:0; font-size:0.7rem; color:var(--accent); background:var(--accent-glow); padding:0.2rem 0.5rem; border-radius:4px; cursor:help;">0%</span>
           </div>
           <div class="metric-item">
             <span class="metric-label">对话请求</span>
@@ -1460,6 +1461,14 @@
           <label class="span-full">
             <span>修改管理密码</span>
             <input id="adminPasswordInput" name="adminPassword" type="password" placeholder="留空则保持当前密码不变">
+          </label>
+          <label>
+            <span>缓存大小上限</span>
+            <input id="cacheMaxSizeInput" name="cacheMaxSize" type="number" min="0" max="10000" placeholder="500">
+          </label>
+          <label style="display:flex; align-items:center; gap:0.8rem;">
+            <button type="button" id="clearCacheBtn" class="primary-btn" style="padding:0.5rem 1rem; font-size:0.85rem;">清空缓存</button>
+            <span id="cacheInfo" style="font-size:0.8rem; color:var(--text-dim);">当前: <strong id="currentCacheSize">0</strong> / <strong id="currentCacheMax">500</strong></span>
           </label>
           <div class="form-actions">
             <button class="primary-btn" type="submit">保存站点配置</button>

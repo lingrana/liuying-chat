@@ -1,5 +1,10 @@
 const onlineCount = document.getElementById("onlineCount");
 const totalVisits = document.getElementById("totalVisits");
+const cacheBadge = document.getElementById("cacheBadge");
+const clearCacheBtn = document.getElementById("clearCacheBtn");
+const cacheMaxSizeInput = document.getElementById("cacheMaxSizeInput");
+const currentCacheSize = document.getElementById("currentCacheSize");
+const currentCacheMax = document.getElementById("currentCacheMax");
 const apiConfigForm = document.getElementById("apiConfigForm");
 const siteConfigForm = document.getElementById("siteConfigForm");
 const apiSaveStatus = document.getElementById("apiSaveStatus");
@@ -357,6 +362,13 @@ async function loadStats() {
   const data = await response.json();
   onlineCount.textContent = data.onlineCount || 0;
   totalVisits.textContent = data.totalVisits || 0;
+
+  if (data.cache) {
+    cacheBadge.textContent = data.cache.hitRate || '0%';
+    cacheBadge.title = `缓存命中率: ${data.cache.hitRate}\n命中: ${data.cache.hits} 次\n未命中: ${data.cache.misses} 次`;
+    currentCacheSize.textContent = data.cache.size || 0;
+    currentCacheMax.textContent = data.cache.maxSize || 500;
+  }
 }
 
 function formatTokenCount(n) {
@@ -433,6 +445,8 @@ async function loadConfig() {
     input.value = config[key] ?? "";
   }
 
+  cacheMaxSizeInput.value = config.cacheMaxSize || 500;
+
   const chatModels = Array.isArray(config.chatAvailableModels) ? config.chatAvailableModels : Array.isArray(config.availableModels) ? config.availableModels : [];
   const imageModels = Array.isArray(config.imageAvailableModels) ? config.imageAvailableModels : [];
   renderAvailableModels(chatModels, "chat");
@@ -491,6 +505,8 @@ async function saveSiteConfig(event) {
   const payload = Object.fromEntries(
     Object.entries(siteFields).map(([key, input]) => [key, input.value])
   );
+
+  payload.cacheMaxSize = parseInt(cacheMaxSizeInput.value) || 500;
 
   const response = await fetch("/api/admin/config", {
     method: "PUT",
@@ -650,14 +666,35 @@ async function initAdmin() {
   apiConfigForm.addEventListener("submit", saveApiConfig);
   siteConfigForm.addEventListener("submit", saveSiteConfig);
   songUploadForm?.addEventListener("submit", uploadSong);
-  
+
   if (songFileInput && songFileText) {
     songFileInput.addEventListener("change", () => {
       const file = songFileInput.files?.[0];
       songFileText.textContent = file ? file.name : "未选择文件";
     });
   }
-  
+
+  clearCacheBtn.addEventListener("click", async () => {
+    if (!confirm("确定要清空所有缓存吗？")) return;
+    try {
+      const response = await fetch("/api/admin/cache/clear", {
+        method: "POST",
+        headers: authHeaders()
+      });
+      if (response.status === 401) {
+        window.location.reload();
+        return;
+      }
+      const data = await response.json();
+      if (data.ok) {
+        alert(`已清空 ${data.cleared} 条缓存`);
+        loadStats();
+      }
+    } catch (error) {
+      alert("清空缓存失败：" + error.message);
+    }
+  });
+
   fetchModelsButton.addEventListener("click", () => fetchModels("chat"));
   fetchImageModelsButton.addEventListener("click", () => fetchModels("image"));
   apiModalTabs.forEach((button) => {
