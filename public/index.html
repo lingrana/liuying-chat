@@ -1472,6 +1472,61 @@
       .upload-file-name { font-size: 0.68rem; }
     }
 
+    /* ═══════════ Link Dropdown ═══════════ */
+    .link-dropdown {
+      position: relative;
+    }
+
+    .link-dropdown-menu {
+      position: absolute;
+      top: calc(100% + 8px);
+      right: 0;
+      min-width: 180px;
+      background: rgba(255, 255, 255, 0.97);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 0.45rem;
+      box-shadow: var(--shadow-lg);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+      z-index: 40;
+      display: none;
+    }
+
+    .link-dropdown-menu.open {
+      display: block;
+      animation: fadeSlide 0.2s ease forwards;
+    }
+
+    .link-dropdown-item {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      padding: 0.55rem 0.75rem;
+      border-radius: 10px;
+      text-decoration: none;
+      color: var(--text-mid);
+      font-size: 0.78rem;
+      font-weight: 400;
+      transition: all 0.2s ease;
+    }
+
+    .link-dropdown-item:hover {
+      background: rgba(46,168,122,0.06);
+      color: var(--accent);
+    }
+
+    .link-dropdown-item svg {
+      width: 16px;
+      height: 16px;
+      flex-shrink: 0;
+      stroke: currentColor;
+      fill: none;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
     @media (max-width: 380px) {
       .chat-header { padding: 0 0.65rem; }
       .messages { padding: 0.65rem; }
@@ -1490,6 +1545,10 @@
         right: 0.65rem;
         left: 0.65rem;
         padding: 0.65rem;
+      }
+      .link-dropdown-menu {
+        min-width: 160px;
+        right: -4px;
       }
     }
   </style>
@@ -1539,12 +1598,29 @@
           <button class="icon-btn" id="openNoticeButton" type="button" title="公告">
 <svg viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
           </button>
-          <a class="icon-btn" href="https://github.com/lingrana" target="_blank" rel="noopener" title="GitHub">
-            <svg viewBox="0 0 24 24"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          </a>
-          <a class="icon-btn" href="https://newapi.lingrana.top/" target="_blank" rel="noopener" title="New API">
-            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" fill="none" stroke-width="2"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" stroke="currentColor" fill="none" stroke-width="2"/></svg>
-          </a>
+          <div class="link-dropdown" id="linkDropdown">
+            <button class="icon-btn" id="linkDropdownTrigger" type="button" title="链接">
+              <svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+            </button>
+            <div class="link-dropdown-menu" id="linkDropdownMenu">
+              <a class="link-dropdown-item" href="https://github.com/lingrana/liuying-chat" target="_blank" rel="noopener">
+                <svg viewBox="0 0 24 24"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg>
+                GitHub
+              </a>
+              <a class="link-dropdown-item" href="https://newapi.lingrana.top/" target="_blank" rel="noopener">
+                <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+                API
+              </a>
+              <a class="link-dropdown-item" href="https://space.bilibili.com/2117391178" target="_blank" rel="noopener">
+                <svg viewBox="0 0 24 24"><path d="M3 7h4l2-3h6l2 3h4v13H3z"/><path d="M8 12h8"/><circle cx="9" cy="15" r="1"/><circle cx="15" cy="15" r="1"/></svg>
+                Bilibili
+              </a>
+              <a class="link-dropdown-item" href="https://v.douyin.com/AS6wHUmKqOU/" target="_blank" rel="noopener">
+                <svg viewBox="0 0 24 24"><path d="M9 12a4 4 0 1 0 4 4V4a5 5 0 0 0 5 5"/></svg>
+                抖音
+              </a>
+            </div>
+          </div>
           <span class="chip accent-chip" id="modelChip">模型读取中</span>
           <span class="chip" id="visitorCount">在线 0 人</span>
           <button class="icon-btn" id="toggleSessionPanelButton" type="button" title="会话管理">
@@ -1673,13 +1749,21 @@
           <span class="notice-icon"><svg viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg></span>
           <span><strong>公告</strong> · 再次查看此说明</span>
         </div>
-        <a class="notice-item" href="https://github.com/lingrana" target="_blank" rel="noopener" style="text-decoration:none;color:inherit;">
+        <a class="notice-item" href="https://github.com/lingrana/liuying-chat" target="_blank" rel="noopener" style="text-decoration:none;color:inherit;">
           <span class="notice-icon"><svg viewBox="0 0 24 24"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg></span>
           <span><strong>GitHub</strong> · 作者主页与源码</span>
         </a>
         <a class="notice-item" href="https://newapi.lingrana.top/" target="_blank" rel="noopener" style="text-decoration:none;color:inherit;">
           <span class="notice-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg></span>
           <span><strong>API</strong> · 模型服务管理</span>
+        </a>
+        <a class="notice-item" href="https://space.bilibili.com/2117391178" target="_blank" rel="noopener" style="text-decoration:none;color:inherit;">
+          <span class="notice-icon"><svg viewBox="0 0 24 24"><path d="M3 7h4l2-3h6l2 3h4v13H3z"/><path d="M8 12h8"/><circle cx="9" cy="15" r="1"/><circle cx="15" cy="15" r="1"/></svg></span>
+          <span><strong>Bilibili</strong> · 主页空间</span>
+        </a>
+        <a class="notice-item" href="https://v.douyin.com/AS6wHUmKqOU/" target="_blank" rel="noopener" style="text-decoration:none;color:inherit;">
+          <span class="notice-icon"><svg viewBox="0 0 24 24"><path d="M9 12a4 4 0 1 0 4 4V4a5 5 0 0 0 5 5"/></svg></span>
+          <span><strong>抖音</strong> · 关注账号</span>
         </a>
         <div class="notice-item">
           <span class="notice-icon"><svg viewBox="0 0 24 24"><path d="M12 3v6m0 6v6m9-9h-6M9 12H3"/></svg></span>
@@ -1695,5 +1779,26 @@
   </div>
 
   <script src="/app.js"></script>
+  <script>
+    (function() {
+      var trigger = document.getElementById("linkDropdownTrigger");
+      var menu = document.getElementById("linkDropdownMenu");
+      if (!trigger || !menu) return;
+      trigger.addEventListener("click", function(e) {
+        e.stopPropagation();
+        menu.classList.toggle("open");
+      });
+      document.addEventListener("click", function(e) {
+        if (!menu.contains(e.target) && e.target !== trigger) {
+          menu.classList.remove("open");
+        }
+      });
+      menu.querySelectorAll(".link-dropdown-item").forEach(function(item) {
+        item.addEventListener("click", function() {
+          menu.classList.remove("open");
+        });
+      });
+    })();
+  </script>
 </body>
 </html>
