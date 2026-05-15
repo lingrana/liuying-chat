@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>流萤 · 聊天</title>
+  <link rel="icon" type="image/png" href="/ly.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@300;400;600;700&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
   <style>
@@ -676,6 +677,83 @@
 
     .session-status.error {
       color: #d44;
+    }
+
+    /* ── Avatar Panel ── */
+    .avatar-btn {
+      padding: 4px;
+      border-radius: 50%;
+      overflow: hidden;
+    }
+
+    .header-avatar {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      object-fit: cover;
+    }
+
+    .avatar-preview-wrap {
+      display: flex;
+      justify-content: center;
+      padding: 0.5rem;
+    }
+
+    .avatar-preview {
+      width: 80px;
+      height: 80px;
+      border-radius: 50%;
+      object-fit: cover;
+      border: 2px solid var(--border);
+    }
+
+    .avatar-upload-wrap {
+      position: relative;
+      display: flex;
+      align-items: center;
+      background: rgba(46,168,122,0.025);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+      transition: all 0.25s ease;
+    }
+
+    .avatar-upload-wrap:hover {
+      border-color: var(--accent-dim);
+    }
+
+    .avatar-file-input {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      cursor: pointer;
+      z-index: 2;
+    }
+
+    .avatar-file-text {
+      flex: 1;
+      padding: 0.6rem 0.85rem;
+      font-family: 'DM Mono', monospace;
+      font-size: 0.75rem;
+      color: var(--text-dim);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .avatar-file-btn {
+      padding: 0.6rem 1rem;
+      background: rgba(46,168,122,0.08);
+      font-family: 'DM Mono', monospace;
+      font-size: 0.72rem;
+      color: var(--accent);
+      white-space: nowrap;
+      border-left: 1px solid var(--border);
+      transition: all 0.2s ease;
+    }
+
+    .avatar-upload-wrap:hover .avatar-file-btn {
+      background: rgba(46,168,122,0.12);
     }
 
     .switch-row {
@@ -1624,30 +1702,20 @@
           <span class="chip accent-chip" id="modelChip">模型读取中</span>
           <span class="chip" id="visitorCount">在线 0 人</span>
           <button class="icon-btn" id="toggleSessionPanelButton" type="button" title="会话管理">
-            <svg viewBox="0 0 24 24"><path d="M12 3v6m0 6v6m9-9h-6M9 12H3"/></svg>
+            <svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
           </button>
-          <button class="icon-btn" id="newConversationButton" type="button" title="新建对话">
-            <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+          <button class="icon-btn avatar-btn" id="toggleAvatarPanelButton" type="button" title="修改头像">
+            <img class="header-avatar" id="headerUserAvatar" src="/api/avatar/user" alt="用户">
           </button>
         </div>
 
         <aside class="session-panel" id="sessionPanel">
           <div class="session-block">
-            <h3>会话管理</h3>
-            <p id="sessionModeText" style="font-size:0.68rem;color:var(--text-dim);">当前为临时聊天模式，关闭页面后记录不会保留</p>
-          </div>
-
-          <div class="session-block">
-            <button class="session-btn" id="openPasswordModalButton" type="button">输入密码进入独立会话</button>
-            <p style="font-size:0.6rem;color:var(--text-dim);margin-top:0.3rem;">独立会话可保存 7 天聊天记录</p>
-          </div>
-
-          <div class="session-block">
-            <div class="switch-row">
-              <label for="noMemoryToggle">本轮不保留当前记忆</label>
-              <input id="noMemoryToggle" type="checkbox">
+            <div style="display:flex;align-items:center;justify-content:space-between;">
+              <h3>会话管理</h3>
+              <button class="session-btn primary" id="newConversationButton" type="button" style="padding:0.4rem 0.8rem;min-height:32px;font-size:0.72rem;">新建对话</button>
             </div>
-            <button class="session-btn ghost" id="openAvatarPanelButton" type="button" style="margin-top:0.3rem;font-size:0.7rem;min-height:36px;">设置用户头像</button>
+            <p id="sessionModeText" style="font-size:0.68rem;color:var(--text-dim);">当前对话记录保留 3 天</p>
           </div>
 
           <div class="session-block">
@@ -1660,28 +1728,37 @@
 
         <aside class="avatar-panel" id="avatarPanel">
           <div class="session-block">
-            <h3>用户头像</h3>
-            <p>这个头像只属于当前密码用户。匿名模式不会保存。</p>
+            <h3>修改头像</h3>
+            <p>上传本地图片或输入图片链接来修改你的头像。</p>
           </div>
 
           <div class="session-block">
-            <span class="mini-label">头像路径</span>
-            <input class="session-input" id="userAvatarPathInput" type="text" placeholder="本地路径或图片链接">
-          </div>
-
-          <div class="session-block">
-            <span class="mini-label">上传头像</span>
-            <div class="upload-row">
-              <input class="file-input-hidden" id="userAvatarFileInput" type="file" accept="image/png,image/jpeg,image/webp,image/gif">
-              <label class="upload-trigger" for="userAvatarFileInput">
-                <span class="upload-trigger-btn">上传头像</span>
-                <span class="upload-file-name" id="userAvatarFileName">未选择文件</span>
-              </label>
-              <button class="session-btn ghost" id="saveAvatarButton" type="button">保存我的头像</button>
+            <span class="mini-label">当前头像</span>
+            <div class="avatar-preview-wrap">
+              <img class="avatar-preview" id="avatarPreview" src="/api/avatar/user" alt="用户头像">
             </div>
           </div>
 
-          <div class="session-status" id="avatarPanelStatus"></div>
+          <div class="session-block">
+            <span class="mini-label">上传图片</span>
+            <div class="avatar-upload-wrap">
+              <input type="file" id="avatarFileInput" accept="image/*" class="avatar-file-input">
+              <span class="avatar-file-text" id="avatarFileText">未选择文件</span>
+              <span class="avatar-file-btn">选择文件</span>
+            </div>
+          </div>
+
+          <div class="session-block">
+            <span class="mini-label">或输入图片链接</span>
+            <input type="text" id="avatarUrlInput" class="session-input" placeholder="https://example.com/avatar.jpg">
+          </div>
+
+          <div class="session-row">
+            <button class="session-btn primary" id="saveAvatarButton" type="button">保存头像</button>
+            <button class="session-btn" id="closeAvatarPanelButton" type="button">取消</button>
+          </div>
+
+          <div class="session-status" id="avatarStatus"></div>
         </aside>
       </header>
 
@@ -1725,20 +1802,6 @@
     </section>
   </main>
 
-  <!-- 密码弹窗 -->
-  <div class="password-modal-overlay" id="passwordModal">
-    <div class="password-modal-card">
-      <h3>进入独立会话</h3>
-      <p>输入密码后，聊天记录将保存 7 天</p>
-      <input class="session-input" id="passwordInput" type="password" placeholder="请输入密码">
-      <div class="session-action-row" style="margin-top:0.8rem;">
-        <button class="session-btn primary" id="passwordSubmitButton" type="button">确认进入</button>
-        <button class="session-btn ghost" id="passwordCancelButton" type="button">取消</button>
-      </div>
-      <div class="session-status" id="passwordModalStatus"></div>
-    </div>
-  </div>
-
   <!-- 公告弹窗 -->
   <div class="password-modal-overlay" id="noticeModal">
     <div class="password-modal-card notice-modal-card">
@@ -1766,12 +1829,12 @@
           <span><strong>抖音</strong> · 关注账号</span>
         </a>
         <div class="notice-item">
-          <span class="notice-icon"><svg viewBox="0 0 24 24"><path d="M12 3v6m0 6v6m9-9h-6M9 12H3"/></svg></span>
-          <span><strong>会话</strong> · 密码登录、头像设置、历史对话</span>
+          <span class="notice-icon"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span>
+          <span><strong>会话</strong> · 管理对话、新建对话</span>
         </div>
         <div class="notice-item">
-          <span class="notice-icon"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></span>
-          <span><strong>新建</strong> · 开始新对话，独立会话保留7天</span>
+          <span class="notice-icon"><svg viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>
+          <span><strong>头像</strong> · 修改你的用户头像</span>
         </div>
       </div>
       <button class="session-btn primary" id="noticeCloseButton" type="button" style="width:100%;min-height:38px;">我知道了</button>

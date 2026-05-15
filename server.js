@@ -12,8 +12,9 @@ const CONFIG_PATH = path.join(DATA_DIR, "config.json");
 const USERS_DIR = path.join(DATA_DIR, "users");
 const SONGS_DIR = path.join(DATA_DIR, "songs");
 const SONGS_INDEX_PATH = path.join(SONGS_DIR, "songs.json");
+const TOKEN_USAGE_PATH = path.join(DATA_DIR, "token-usage.json");
 const VISITOR_TTL_MS = 45 * 1000;
-const CHAT_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+const CHAT_RETENTION_MS = 3 * 24 * 60 * 60 * 1000;
 const DEFAULT_ASSISTANT_AVATAR = path.join(DATA_DIR, "lingran.png");
 const DEFAULT_USER_AVATAR = path.join(DATA_DIR, "lingran.png");
 const DEFAULT_MAX_HISTORY_MESSAGES = 20;
@@ -50,9 +51,8 @@ const MIME_TYPES = {
 
 const visitors = new Map();
 let totalVisits = 0;
-const anonymousUsers = new Map();
 let apiConnectionStatus = { ok: false, message: "未测试", testedAt: 0 };
-const tokenUsageEvents = [];
+let tokenUsageEvents = [];
 const imageGenerationLimits = new Map();
 const IMAGE_GENERATION_COOLDOWN_MS = 5 * 60 * 1000;
 const MAX_JSON_BODY_BYTES = 30 * 1024 * 1024;
@@ -78,6 +78,9 @@ function ensureDataFiles() {
   }
   if (!fs.existsSync(SONGS_INDEX_PATH)) {
     fs.writeFileSync(SONGS_INDEX_PATH, "[]", "utf8");
+  }
+  if (!fs.existsSync(TOKEN_USAGE_PATH)) {
+    fs.writeFileSync(TOKEN_USAGE_PATH, "[]", "utf8");
   }
 }
 
@@ -196,6 +199,58 @@ function getUserAvatarFilePath(userKey, extension = ".png") {
   return path.join(USERS_DIR, `${userKey}-avatar${extension}`);
 }
 
+function normalizePersistentUserStore(userStore) {
+  if (!userStore || typeof userStore !== "object") {
+    return null;
+  }
+  return {
+    persistent: userStore.persistent !== false,
+    sessionId: typeof userStore.sessionId === "string" ? userStore.sessionId : "",
+    ip: typeof userStore.ip === "string" ? userStore.ip : "",
+    createdAt: Number.isFinite(userStore.createdAt) ? userStore.createdAt : Date.now(),
+    updatedAt: Number.isFinite(userStore.updatedAt) ? userStore.updatedAt : Date.now(),
+    userAvatarPath: typeof userStore.userAvatarPath === "string" ? userStore.userAvatarPath : "",
+    conversations: Array.isArray(userStore.conversations) ? userStore.conversations : []
+  };
+}
+
+function normalizeConversationMessage(message) {
+  if (!message || typeof message !== "object") {
+    return null;
+  }
+  return {
+    id: typeof message.id === "string" && message.id.trim() ? message.id.trim() : crypto.randomUUID(),
+    role: typeof message.role === "string" && message.role.trim() ? message.role.trim() : "assistant",
+    content: typeof message.content === "string" ? message.content : "",
+    createdAt: Number.isFinite(message.createdAt) ? message.createdAt : Date.now(),
+    kind: typeof message.kind === "string" ? message.kind : undefined,
+    imageUrl: typeof message.imageUrl === "string" ? message.imageUrl : undefined,
+    imagePrompt: typeof message.imagePrompt === "string" ? message.imagePrompt : undefined,
+    songUrl: typeof message.songUrl === "string" ? message.songUrl : undefined,
+    songTitle: typeof message.songTitle === "string" ? message.songTitle : undefined,
+    songArtist: typeof message.songArtist === "string" ? message.songArtist : undefined
+  };
+}
+
+function normalizeConversationRecord(conversation) {
+  if (!conversation || typeof conversation !== "object") {
+    return null;
+  }
+  const messages = Array.isArray(conversation.messages)
+    ? conversation.messages.map(normalizeConversationMessage).filter(Boolean)
+    : [];
+  const updatedAt = Number.isFinite(conversation.updatedAt)
+    ? conversation.updatedAt
+    : (messages[messages.length - 1]?.createdAt || Date.now());
+  return {
+    id: typeof conversation.id === "string" && conversation.id.trim() ? conversation.id.trim() : crypto.randomUUID(),
+    title: typeof conversation.title === "string" && conversation.title.trim() ? conversation.title.trim() : "新对话",
+    createdAt: Number.isFinite(conversation.createdAt) ? conversation.createdAt : updatedAt,
+    updatedAt,
+    messages
+  };
+}
+
 function loadPersistentUserStore(userKey) {
   ensureDataFiles();
   const filePath = getUserFilePath(userKey);
@@ -205,14 +260,60 @@ function loadPersistentUserStore(userKey) {
   try {
     const raw = fs.readFileSync(filePath, "utf8");
     const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === "object" ? parsed : null;
+    const normalized = normalizePersistentUserStore(parsed);
+    if (!normalized) return null;
+    normalized.conversations = normalized.conversations.map(normalizeConversationRecord).filter(Boolean);
+    return normalized;
   } catch {
     return null;
   }
 }
 
 function savePersistentUserStore(userKey, userStore) {
-  fs.writeFileSync(getUserFilePath(userKey), JSON.stringify(userStore, null, 2), "utf8");
+  const normalized = normalizePersistentUserStore(userStore);
+  if (!normalized) {
+    return;
+  }
+  normalized.conversations = normalized.conversations.map(normalizeConversationRecord).filter(Boolean);
+  fs.writeFileSync(
+    getUserFilePath(userKey),
+    JSON.stringify(normalized, null, 2),
+    "utf8"
+  );
+}
+
+function normalizeTokenUsageEvent(event) {
+  if (!event || typeof event !== "object") {
+    return null;
+  }
+  return {
+    id: typeof event.id === "string" && event.id.trim() ? event.id.trim() : crypto.randomUUID(),
+    createdAt: Number.isFinite(event.createdAt) ? event.createdAt : Date.now(),
+    type: event.type === "image" ? "image" : "chat",
+    ip: typeof event.ip === "string" && event.ip.trim() ? event.ip.trim() : "unknown",
+    sessionId: typeof event.sessionId === "string" ? event.sessionId : "",
+    promptTokens: Math.max(0, Number(event.promptTokens) || 0),
+    completionTokens: Math.max(0, Number(event.completionTokens) || 0),
+    totalTokens: Math.max(0, Number(event.totalTokens) || 0)
+  };
+}
+
+function loadTokenUsageEvents() {
+  ensureDataFiles();
+  try {
+    const parsed = JSON.parse(fs.readFileSync(TOKEN_USAGE_PATH, "utf8"));
+    tokenUsageEvents = Array.isArray(parsed) ? parsed.map(normalizeTokenUsageEvent).filter(Boolean) : [];
+  } catch {
+    tokenUsageEvents = [];
+  }
+}
+
+function saveTokenUsageEvents() {
+  const cutoff = Date.now() - CHAT_RETENTION_MS;
+  tokenUsageEvents = tokenUsageEvents
+    .map(normalizeTokenUsageEvent)
+    .filter((event) => event && event.createdAt >= cutoff);
+  fs.writeFileSync(TOKEN_USAGE_PATH, JSON.stringify(tokenUsageEvents, null, 2), "utf8");
 }
 
 function deletePersistentUserStore(userKey) {
@@ -226,6 +327,27 @@ function deletePersistentUserStore(userKey) {
   for (const avatarFile of avatarCandidates) {
     fs.unlinkSync(path.join(USERS_DIR, avatarFile));
   }
+}
+
+function listPersistentUserStores() {
+  ensureDataFiles();
+  if (!fs.existsSync(USERS_DIR)) {
+    return [];
+  }
+  return fs.readdirSync(USERS_DIR)
+    .filter((fileName) => fileName.endsWith(".json"))
+    .map((fileName) => {
+      const userKey = fileName.slice(0, -5);
+      const userStore = loadPersistentUserStore(userKey);
+      return userStore ? { userKey, userStore } : null;
+    })
+    .filter(Boolean);
+}
+
+function findPersistentUserStoreBySessionId(sessionId) {
+  const target = String(sessionId || "").trim();
+  if (!target) return null;
+  return listPersistentUserStores().find((entry) => entry.userStore.sessionId === target) || null;
 }
 
 function loadSongs() {
@@ -402,18 +524,22 @@ function requireAdminAuth(req, res) {
   return true;
 }
 
-function getUserKey(password) {
-  return hashPassword(password.trim());
+function getSessionUserKey(sessionId) {
+  return hashPassword(`session:${String(sessionId || "").trim()}`);
+}
+
+function getIpUserKey(ip) {
+  return hashPassword(`ip:${String(ip || "unknown").trim()}`);
 }
 
 function createConversation({ title = "新对话", now = Date.now() } = {}) {
-  return {
+  return normalizeConversationRecord({
     id: crypto.randomUUID(),
     title,
     createdAt: now,
     updatedAt: now,
     messages: []
-  };
+  });
 }
 
 function sanitizeConversation(conversation) {
@@ -426,13 +552,14 @@ function sanitizeConversation(conversation) {
   };
 }
 
-function createUserStore({ persistent, password } = {}) {
+function createUserStore({ persistent = true, sessionId, ip = "" } = {}) {
   const now = Date.now();
   return {
     persistent,
+    sessionId: sessionId || "",
+    ip,
     createdAt: now,
     updatedAt: now,
-    passwordHash: persistent ? getUserKey(password) : null,
     userAvatarPath: "",
     conversations: [createConversation({ now })]
   };
@@ -465,58 +592,44 @@ function cleanupExpiredPersistentUsers() {
     userStore.updatedAt = conversations[0].updatedAt;
     savePersistentUserStore(userKey, userStore);
   }
-
-  for (const [sessionId, anonStore] of anonymousUsers.entries()) {
-    if (!anonStore || now - (anonStore.updatedAt || 0) > CHAT_RETENTION_MS) {
-      anonymousUsers.delete(sessionId);
-      continue;
-    }
-    if (!Array.isArray(anonStore.conversations) || anonStore.conversations.length === 0) {
-      anonStore.conversations = [createConversation({ now })];
-      anonStore.updatedAt = now;
-    }
-  }
 }
 
-function getOrCreateUserStore({ sessionId, password }) {
+function getOrCreateUserStore({ sessionId, ip = "" }) {
   const now = Date.now();
-  const normalizedPassword = typeof password === "string" ? password.trim() : "";
-
-  if (normalizedPassword) {
-    const key = getUserKey(normalizedPassword);
-    let userStore = loadPersistentUserStore(key);
-    if (!userStore) {
-      userStore = createUserStore({ persistent: true, password: normalizedPassword });
-      savePersistentUserStore(key, userStore);
-    }
-    userStore.updatedAt = now;
-    if (!Array.isArray(userStore.conversations) || userStore.conversations.length === 0) {
-      userStore.conversations = [createConversation({ now })];
-    }
-    return {
-      key,
-      userStore,
-      persistent: true,
-      save() {
-        savePersistentUserStore(key, userStore);
-      }
-    };
+  
+  // 优先使用IP来识别用户
+  let key;
+  let sessionKey;
+  
+  if (ip) {
+    key = getIpUserKey(ip);
+    sessionKey = `ip-${ip}`;
+  } else {
+    sessionKey = typeof sessionId === "string" && sessionId.trim() ? sessionId.trim() : crypto.randomUUID();
+    key = getSessionUserKey(sessionKey);
   }
-
-  const anonymousKey = typeof sessionId === "string" && sessionId.trim() ? sessionId.trim() : crypto.randomUUID();
-  if (!anonymousUsers.has(anonymousKey)) {
-    anonymousUsers.set(anonymousKey, createUserStore({ persistent: false }));
+  
+  let userStore = loadPersistentUserStore(key);
+  if (!userStore) {
+    userStore = createUserStore({ persistent: true, sessionId: sessionKey, ip });
+    savePersistentUserStore(key, userStore);
   }
-  const userStore = anonymousUsers.get(anonymousKey);
   userStore.updatedAt = now;
+  userStore.sessionId = userStore.sessionId || sessionKey;
+  if (ip) {
+    userStore.ip = ip;
+  }
   if (!Array.isArray(userStore.conversations) || userStore.conversations.length === 0) {
     userStore.conversations = [createConversation({ now })];
   }
   return {
-    key: anonymousKey,
+    key,
+    sessionId: sessionKey,
     userStore,
-    persistent: false,
-    save() {}
+    persistent: true,
+    save() {
+      savePersistentUserStore(key, userStore);
+    }
   };
 }
 
@@ -542,7 +655,7 @@ function appendConversationMessage(conversation, role, content, createdAt = Date
   if (!Array.isArray(conversation.messages)) {
     conversation.messages = [];
   }
-  conversation.messages.push({ role, content, createdAt, ...extra });
+  conversation.messages.push(normalizeConversationMessage({ role, content, createdAt, ...extra }));
   conversation.messages = conversation.messages.slice(-DEFAULT_MAX_HISTORY_MESSAGES);
   if (!conversation.title || conversation.title === "新对话") {
     conversation.title = deriveConversationTitle(content);
@@ -628,24 +741,30 @@ function getVisitorSnapshot() {
   };
 }
 
-function recordTokenUsage({ promptTokens, completionTokens, totalTokens }) {
-  tokenUsageEvents.push({
+function recordTokenUsage({ promptTokens, completionTokens, totalTokens, ip = "unknown", sessionId = "" }) {
+  tokenUsageEvents.push(normalizeTokenUsageEvent({
     createdAt: Date.now(),
     type: "chat",
+    ip,
+    sessionId,
     promptTokens,
     completionTokens,
     totalTokens
-  });
+  }));
+  saveTokenUsageEvents();
 }
 
-function recordUsageEvent({ type, promptTokens = 0, completionTokens = 0, totalTokens = 0 }) {
-  tokenUsageEvents.push({
+function recordUsageEvent({ type, promptTokens = 0, completionTokens = 0, totalTokens = 0, ip = "unknown", sessionId = "" }) {
+  tokenUsageEvents.push(normalizeTokenUsageEvent({
     createdAt: Date.now(),
     type,
+    ip,
+    sessionId,
     promptTokens,
     completionTokens,
     totalTokens
-  });
+  }));
+  saveTokenUsageEvents();
 }
 
 function getTokenStats(range = "all") {
@@ -678,6 +797,460 @@ function getTokenStats(range = "all") {
     ...stats.total,
     ...stats
   };
+}
+
+function getAdminConversationAudit() {
+  cleanupExpiredPersistentUsers();
+  const now = Date.now();
+  const byIp = new Map();
+  const createBucket = (ip) => ({
+    ip,
+    totalPrompt: 0,
+    totalCompletion: 0,
+    totalTokens: 0,
+    requests: 0,
+    tokenEvents: [],
+    sessions: [],
+    conversations: []
+  });
+
+  for (const event of tokenUsageEvents) {
+    if (now - (event.createdAt || 0) > CHAT_RETENTION_MS || event.type !== "chat") {
+      continue;
+    }
+    const ip = event.ip || "unknown";
+    if (!byIp.has(ip)) {
+      byIp.set(ip, createBucket(ip));
+    }
+    const bucket = byIp.get(ip);
+    bucket.totalPrompt += Number(event.promptTokens) || 0;
+    bucket.totalCompletion += Number(event.completionTokens) || 0;
+    bucket.totalTokens += Number(event.totalTokens) || 0;
+    bucket.requests += 1;
+    bucket.tokenEvents.push({
+      id: event.id,
+      type: event.type,
+      ip: event.ip,
+      sessionId: event.sessionId || "",
+      promptTokens: Number(event.promptTokens) || 0,
+      completionTokens: Number(event.completionTokens) || 0,
+      totalTokens: Number(event.totalTokens) || 0,
+      createdAt: event.createdAt || 0
+    });
+  }
+
+  for (const { userKey, userStore } of listPersistentUserStores()) {
+    const conversations = Array.isArray(userStore.conversations)
+      ? userStore.conversations.filter((conversation) => now - (conversation.updatedAt || 0) <= CHAT_RETENTION_MS)
+      : [];
+    if (conversations.length === 0) continue;
+    const ip = userStore.ip || "unknown";
+    if (!byIp.has(ip)) {
+      byIp.set(ip, createBucket(ip));
+    }
+    const bucket = byIp.get(ip);
+    const sessionRecord = {
+      userKey,
+      sessionId: userStore.sessionId || "",
+      ip,
+      createdAt: userStore.createdAt || 0,
+      updatedAt: userStore.updatedAt || 0,
+      conversationCount: conversations.length,
+      conversations: conversations.map((conversation) => ({
+        id: conversation.id,
+        title: conversation.title || "新对话",
+        createdAt: conversation.createdAt || 0,
+        updatedAt: conversation.updatedAt || 0,
+        messageCount: Array.isArray(conversation.messages) ? conversation.messages.length : 0,
+        messages: Array.isArray(conversation.messages)
+          ? conversation.messages.map((message) => ({
+              id: message.id,
+              role: message.role,
+              content: message.content,
+              createdAt: message.createdAt,
+              kind: message.kind,
+              imageUrl: message.imageUrl,
+              imagePrompt: message.imagePrompt,
+              songUrl: message.songUrl,
+              songTitle: message.songTitle,
+              songArtist: message.songArtist
+            }))
+          : []
+      }))
+    };
+    bucket.sessions.push(sessionRecord);
+    bucket.conversations.push(...sessionRecord.conversations.map((conversation) => ({
+      ...conversation,
+      userKey,
+      sessionId: userStore.sessionId || ""
+    })));
+  }
+
+  return {
+    retentionDays: Math.round(CHAT_RETENTION_MS / (24 * 60 * 60 * 1000)),
+    items: [...byIp.values()]
+      .map((item) => ({
+        ...item,
+        tokenEvents: item.tokenEvents.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)),
+        sessions: item.sessions.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)),
+        conversations: item.conversations.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
+      }))
+      .sort((a, b) => (b.totalTokens || 0) - (a.totalTokens || 0))
+  };
+}
+
+function sanitizeAdminMessage(message) {
+  return {
+    id: message.id,
+    role: message.role,
+    content: message.content,
+    createdAt: message.createdAt,
+    kind: message.kind,
+    imageUrl: message.imageUrl,
+    imagePrompt: message.imagePrompt,
+    songUrl: message.songUrl,
+    songTitle: message.songTitle,
+    songArtist: message.songArtist
+  };
+}
+
+function sanitizeAdminConversation(conversation, userKey = "", sessionId = "") {
+  return {
+    id: conversation.id,
+    userKey,
+    sessionId,
+    title: conversation.title || "新对话",
+    createdAt: conversation.createdAt || 0,
+    updatedAt: conversation.updatedAt || 0,
+    messageCount: Array.isArray(conversation.messages) ? conversation.messages.length : 0,
+    messages: Array.isArray(conversation.messages) ? conversation.messages.map(sanitizeAdminMessage) : []
+  };
+}
+
+function resolveAdminUserStore(body = {}) {
+  const userKey = typeof body.userKey === "string" ? body.userKey.trim() : "";
+  const sessionId = typeof body.sessionId === "string" ? body.sessionId.trim() : "";
+  const ip = typeof body.ip === "string" ? body.ip.trim() : "";
+
+  if (userKey) {
+    const userStore = loadPersistentUserStore(userKey);
+    if (!userStore) {
+      return { error: "用户会话不存在。" };
+    }
+    if (ip) userStore.ip = ip;
+    return { userKey, sessionId: userStore.sessionId || sessionId, userStore };
+  }
+
+  if (sessionId) {
+    const existing = findPersistentUserStoreBySessionId(sessionId);
+    if (existing) {
+      if (ip) existing.userStore.ip = ip;
+      return { userKey: existing.userKey, sessionId, userStore: existing.userStore };
+    }
+    const created = getOrCreateUserStore({ sessionId, ip });
+    return { userKey: created.key, sessionId: created.sessionId, userStore: created.userStore };
+  }
+
+  const created = getOrCreateUserStore({ sessionId: crypto.randomUUID(), ip });
+  return { userKey: created.key, sessionId: created.sessionId, userStore: created.userStore };
+}
+
+function findConversationForAdmin(userStore, conversationId) {
+  const id = typeof conversationId === "string" ? conversationId.trim() : "";
+  if (!id) return null;
+  return Array.isArray(userStore.conversations)
+    ? userStore.conversations.find((conversation) => conversation.id === id) || null
+    : null;
+}
+
+function findMessageForAdmin(conversation, messageId) {
+  const id = typeof messageId === "string" ? messageId.trim() : "";
+  if (!id || !Array.isArray(conversation.messages)) return null;
+  return conversation.messages.find((message) => message.id === id) || null;
+}
+
+async function handleAdminAuditIpUpdate(req, res) {
+  if (!requireAdminAuth(req, res)) return;
+  const body = await parseBody(req);
+  const ip = typeof body.ip === "string" ? body.ip.trim() : "";
+  const nextIp = typeof body.nextIp === "string" ? body.nextIp.trim() : "";
+  if (!ip || !nextIp) {
+    sendJson(res, 400, { error: "缺少 IP 信息。" });
+    return;
+  }
+  for (const event of tokenUsageEvents) {
+    if ((event.ip || "unknown") === ip) {
+      event.ip = nextIp;
+    }
+  }
+  saveTokenUsageEvents();
+  for (const { userKey, userStore } of listPersistentUserStores()) {
+    if ((userStore.ip || "unknown") === ip) {
+      userStore.ip = nextIp;
+      savePersistentUserStore(userKey, userStore);
+    }
+  }
+  sendJson(res, 200, { ok: true, audit: getAdminConversationAudit() });
+}
+
+async function handleAdminAuditIpDelete(req, res) {
+  if (!requireAdminAuth(req, res)) return;
+  const body = await parseBody(req);
+  const ip = typeof body.ip === "string" ? body.ip.trim() : "";
+  if (!ip) {
+    sendJson(res, 400, { error: "缺少 IP。" });
+    return;
+  }
+  tokenUsageEvents = tokenUsageEvents.filter((event) => (event.ip || "unknown") !== ip);
+  saveTokenUsageEvents();
+  for (const { userKey, userStore } of listPersistentUserStores()) {
+    if ((userStore.ip || "unknown") === ip) {
+      deletePersistentUserStore(userKey);
+    }
+  }
+  sendJson(res, 200, { ok: true, audit: getAdminConversationAudit() });
+}
+
+async function handleAdminTokenEventCreate(req, res) {
+  if (!requireAdminAuth(req, res)) return;
+  const body = await parseBody(req);
+  const event = normalizeTokenUsageEvent({
+    id: crypto.randomUUID(),
+    createdAt: Number.isFinite(Number(body.createdAt)) ? Number(body.createdAt) : Date.now(),
+    type: body.type === "image" ? "image" : "chat",
+    ip: typeof body.ip === "string" && body.ip.trim() ? body.ip.trim() : "unknown",
+    sessionId: typeof body.sessionId === "string" ? body.sessionId.trim() : "",
+    promptTokens: body.promptTokens,
+    completionTokens: body.completionTokens,
+    totalTokens: body.totalTokens
+  });
+  tokenUsageEvents.push(event);
+  saveTokenUsageEvents();
+  sendJson(res, 200, { ok: true, event, audit: getAdminConversationAudit() });
+}
+
+async function handleAdminTokenEventUpdate(req, res) {
+  if (!requireAdminAuth(req, res)) return;
+  const body = await parseBody(req);
+  const eventId = typeof body.eventId === "string" ? body.eventId.trim() : "";
+  const event = tokenUsageEvents.find((item) => item.id === eventId);
+  if (!event) {
+    sendJson(res, 404, { error: "消耗记录不存在。" });
+    return;
+  }
+  const next = normalizeTokenUsageEvent({
+    ...event,
+    ...body,
+    id: event.id
+  });
+  Object.assign(event, next);
+  saveTokenUsageEvents();
+  sendJson(res, 200, { ok: true, event, audit: getAdminConversationAudit() });
+}
+
+async function handleAdminTokenEventDelete(req, res) {
+  if (!requireAdminAuth(req, res)) return;
+  const body = await parseBody(req);
+  const eventId = typeof body.eventId === "string" ? body.eventId.trim() : "";
+  const nextEvents = tokenUsageEvents.filter((item) => item.id !== eventId);
+  if (nextEvents.length === tokenUsageEvents.length) {
+    sendJson(res, 404, { error: "消耗记录不存在。" });
+    return;
+  }
+  tokenUsageEvents = nextEvents;
+  saveTokenUsageEvents();
+  sendJson(res, 200, { ok: true, audit: getAdminConversationAudit() });
+}
+
+async function handleAdminConversationCreate(req, res) {
+  if (!requireAdminAuth(req, res)) return;
+  const body = await parseBody(req);
+  const resolved = resolveAdminUserStore(body);
+  if (resolved.error) {
+    sendJson(res, 404, { error: resolved.error });
+    return;
+  }
+  const now = Date.now();
+  const conversation = createConversation({
+    title: typeof body.title === "string" && body.title.trim() ? body.title.trim() : "新对话",
+    now: Number.isFinite(Number(body.createdAt)) ? Number(body.createdAt) : now
+  });
+  resolved.userStore.ip = typeof body.ip === "string" && body.ip.trim() ? body.ip.trim() : (resolved.userStore.ip || "unknown");
+  resolved.userStore.sessionId = resolved.userStore.sessionId || resolved.sessionId;
+  resolved.userStore.conversations.unshift(conversation);
+  resolved.userStore.updatedAt = now;
+  savePersistentUserStore(resolved.userKey, resolved.userStore);
+  sendJson(res, 200, {
+    ok: true,
+    conversation: sanitizeAdminConversation(conversation, resolved.userKey, resolved.userStore.sessionId || ""),
+    audit: getAdminConversationAudit()
+  });
+}
+
+async function handleAdminConversationUpdate(req, res) {
+  if (!requireAdminAuth(req, res)) return;
+  const body = await parseBody(req);
+  const resolved = resolveAdminUserStore(body);
+  if (resolved.error) {
+    sendJson(res, 404, { error: resolved.error });
+    return;
+  }
+  const conversation = findConversationForAdmin(resolved.userStore, body.conversationId);
+  if (!conversation) {
+    sendJson(res, 404, { error: "对话不存在。" });
+    return;
+  }
+  const title = typeof body.title === "string" ? body.title.trim() : "";
+  if (title) {
+    conversation.title = title;
+  }
+  if (typeof body.ip === "string" && body.ip.trim()) {
+    resolved.userStore.ip = body.ip.trim();
+  }
+  conversation.updatedAt = Date.now();
+  resolved.userStore.updatedAt = conversation.updatedAt;
+  savePersistentUserStore(resolved.userKey, resolved.userStore);
+  sendJson(res, 200, {
+    ok: true,
+    conversation: sanitizeAdminConversation(conversation, resolved.userKey, resolved.userStore.sessionId || ""),
+    audit: getAdminConversationAudit()
+  });
+}
+
+async function handleAdminConversationDelete(req, res) {
+  if (!requireAdminAuth(req, res)) return;
+  const body = await parseBody(req);
+  const resolved = resolveAdminUserStore(body);
+  if (resolved.error) {
+    sendJson(res, 404, { error: resolved.error });
+    return;
+  }
+  const conversationId = typeof body.conversationId === "string" ? body.conversationId.trim() : "";
+  const nextConversations = (resolved.userStore.conversations || []).filter((item) => item.id !== conversationId);
+  if (nextConversations.length === (resolved.userStore.conversations || []).length) {
+    sendJson(res, 404, { error: "对话不存在。" });
+    return;
+  }
+  if (nextConversations.length === 0) {
+    deletePersistentUserStore(resolved.userKey);
+  } else {
+    resolved.userStore.conversations = nextConversations;
+    resolved.userStore.updatedAt = Date.now();
+    savePersistentUserStore(resolved.userKey, resolved.userStore);
+  }
+  sendJson(res, 200, { ok: true, audit: getAdminConversationAudit() });
+}
+
+async function handleAdminMessageCreate(req, res) {
+  if (!requireAdminAuth(req, res)) return;
+  const body = await parseBody(req);
+  const resolved = resolveAdminUserStore(body);
+  if (resolved.error) {
+    sendJson(res, 404, { error: resolved.error });
+    return;
+  }
+  const conversation = findConversationForAdmin(resolved.userStore, body.conversationId);
+  if (!conversation) {
+    sendJson(res, 404, { error: "对话不存在。" });
+    return;
+  }
+  const content = typeof body.content === "string" ? body.content : "";
+  const role = typeof body.role === "string" && body.role.trim() ? body.role.trim() : "assistant";
+  const message = normalizeConversationMessage({
+    id: crypto.randomUUID(),
+    role,
+    content,
+    createdAt: Number.isFinite(Number(body.createdAt)) ? Number(body.createdAt) : Date.now()
+  });
+  conversation.messages.push(message);
+  conversation.messages.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+  conversation.updatedAt = message.createdAt;
+  resolved.userStore.updatedAt = message.createdAt;
+  if (typeof body.title === "string" && body.title.trim()) {
+    conversation.title = body.title.trim();
+  } else if (!conversation.title || conversation.title === "新对话") {
+    conversation.title = deriveConversationTitle(content);
+  }
+  savePersistentUserStore(resolved.userKey, resolved.userStore);
+  sendJson(res, 200, {
+    ok: true,
+    message: sanitizeAdminMessage(message),
+    conversation: sanitizeAdminConversation(conversation, resolved.userKey, resolved.userStore.sessionId || ""),
+    audit: getAdminConversationAudit()
+  });
+}
+
+async function handleAdminMessageUpdate(req, res) {
+  if (!requireAdminAuth(req, res)) return;
+  const body = await parseBody(req);
+  const resolved = resolveAdminUserStore(body);
+  if (resolved.error) {
+    sendJson(res, 404, { error: resolved.error });
+    return;
+  }
+  const conversation = findConversationForAdmin(resolved.userStore, body.conversationId);
+  if (!conversation) {
+    sendJson(res, 404, { error: "对话不存在。" });
+    return;
+  }
+  const message = findMessageForAdmin(conversation, body.messageId);
+  if (!message) {
+    sendJson(res, 404, { error: "消息不存在。" });
+    return;
+  }
+  if (typeof body.role === "string" && body.role.trim()) {
+    message.role = body.role.trim();
+  }
+  if (typeof body.content === "string") {
+    message.content = body.content;
+  }
+  if (Number.isFinite(Number(body.createdAt))) {
+    message.createdAt = Number(body.createdAt);
+  }
+  conversation.messages = conversation.messages.map((item) => normalizeConversationMessage(item)).filter(Boolean);
+  conversation.messages.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+  if (typeof body.title === "string" && body.title.trim()) {
+    conversation.title = body.title.trim();
+  }
+  conversation.updatedAt = conversation.messages[conversation.messages.length - 1]?.createdAt || Date.now();
+  resolved.userStore.updatedAt = conversation.updatedAt;
+  savePersistentUserStore(resolved.userKey, resolved.userStore);
+  sendJson(res, 200, {
+    ok: true,
+    message: sanitizeAdminMessage(findMessageForAdmin(conversation, message.id)),
+    conversation: sanitizeAdminConversation(conversation, resolved.userKey, resolved.userStore.sessionId || ""),
+    audit: getAdminConversationAudit()
+  });
+}
+
+async function handleAdminMessageDelete(req, res) {
+  if (!requireAdminAuth(req, res)) return;
+  const body = await parseBody(req);
+  const resolved = resolveAdminUserStore(body);
+  if (resolved.error) {
+    sendJson(res, 404, { error: resolved.error });
+    return;
+  }
+  const conversation = findConversationForAdmin(resolved.userStore, body.conversationId);
+  if (!conversation) {
+    sendJson(res, 404, { error: "对话不存在。" });
+    return;
+  }
+  const messageId = typeof body.messageId === "string" ? body.messageId.trim() : "";
+  const nextMessages = (conversation.messages || []).filter((item) => item.id !== messageId);
+  if (nextMessages.length === (conversation.messages || []).length) {
+    sendJson(res, 404, { error: "消息不存在。" });
+    return;
+  }
+  conversation.messages = nextMessages;
+  conversation.updatedAt = conversation.messages[conversation.messages.length - 1]?.createdAt || conversation.createdAt || Date.now();
+  resolved.userStore.updatedAt = conversation.updatedAt;
+  savePersistentUserStore(resolved.userKey, resolved.userStore);
+  sendJson(res, 200, {
+    ok: true,
+    conversation: sanitizeAdminConversation(conversation, resolved.userKey, resolved.userStore.sessionId || ""),
+    audit: getAdminConversationAudit()
+  });
 }
 
 function getUsageFromPayload(payload) {
@@ -880,12 +1453,8 @@ async function handleSongGet(req, res) {
 }
 
 async function handleCustomUserAvatar(req, res) {
-  const body = req.method === "POST" ? await parseBody(req) : {};
-  const url = new URL(req.url, `http://${req.headers.host}`);
-  const sessionId = String(body.sessionId || url.searchParams.get("sessionId") || "").trim();
-  const password = String(body.password || url.searchParams.get("password") || "");
   const config = loadConfig();
-  const { userStore } = getOrCreateUserStore({ sessionId, password });
+  const { userStore } = getOrCreateUserStore({ ip: getClientIp(req) });
   const customPath = getCustomUserAvatarPath(userStore);
   if (customPath) {
     sendFile(res, customPath);
@@ -896,28 +1465,27 @@ async function handleCustomUserAvatar(req, res) {
 
 async function handleHeartbeat(req, res) {
   const body = await parseBody(req);
-  const sessionId = typeof body.sessionId === "string" && body.sessionId.trim()
-    ? body.sessionId.trim()
-    : crypto.randomUUID();
+  const ip = getClientIp(req);
+  const visitorKey = ip || crypto.randomUUID();
   const page = typeof body.page === "string" && body.page.trim() ? body.page.trim() : "chat";
   const now = Date.now();
-  const current = visitors.get(sessionId);
+  const current = visitors.get(visitorKey);
 
   if (!current) {
     totalVisits += 1;
   }
 
-  visitors.set(sessionId, {
-    sessionId,
+  visitors.set(visitorKey, {
+    sessionId: visitorKey,
     page,
     startedAt: current ? current.startedAt : now,
     lastSeen: now,
-    ip: getClientIp(req),
+    ip,
     userAgent: req.headers["user-agent"] || "unknown"
   });
 
   sendJson(res, 200, {
-    sessionId,
+    sessionId: visitorKey,
     ...getVisitorSnapshot()
   });
 }
@@ -1023,9 +1591,8 @@ function getImagePrompt(message) {
     .trim() || String(message || "").trim();
 }
 
-function getImageLimitKey({ sessionId, password, userKey }) {
+function getImageLimitKey({ sessionId, userKey }) {
   if (userKey) return userKey;
-  if (password && password.trim()) return hashPassword(password.trim());
   return sessionId || "anonymous";
 }
 
@@ -1181,10 +1748,8 @@ async function handleChat(req, res) {
   const config = loadConfig();
   const chatConfig = getChatConfig(config);
   const message = typeof body.message === "string" ? body.message.trim() : "";
-  const sessionId = typeof body.sessionId === "string" ? body.sessionId.trim() : "";
-  const password = typeof body.password === "string" ? body.password : "";
   const conversationId = typeof body.conversationId === "string" ? body.conversationId.trim() : "";
-  const stateless = Boolean(body.stateless);
+  const clientIp = getClientIp(req);
 
   if (!message) {
     sendJson(res, 400, { error: "消息不能为空。" });
@@ -1197,7 +1762,7 @@ async function handleChat(req, res) {
   }
 
   cleanupExpiredPersistentUsers();
-  const { key: userKey, userStore, persistent, save } = getOrCreateUserStore({ sessionId, password });
+  const { key: userKey, userStore, persistent, save } = getOrCreateUserStore({ ip: clientIp });
   let conversation = ensureConversation(userStore, conversationId);
 
   if (!conversationId || !userStore.conversations.some((item) => item.id === conversationId)) {
@@ -1219,7 +1784,7 @@ async function handleChat(req, res) {
       temperature: Number(chatConfig.temperature) || 0.8,
       max_tokens: Math.min(Number(chatConfig.maxTokens) || 800, 160),
       stream: false,
-      messages: buildChatMessages(chatConfig, conversation.messages || [], songReplyPrompt, stateless)
+      messages: buildChatMessages(chatConfig, conversation.messages || [], songReplyPrompt, false)
     };
 
     let apiResult;
@@ -1244,22 +1809,20 @@ async function handleChat(req, res) {
     }
 
     const usage = getUsageFromPayload(payload);
-    recordTokenUsage(usage);
+    recordTokenUsage({ ...usage, ip: clientIp });
 
-    if (!stateless) {
-      const now = Date.now();
-      appendConversationMessage(conversation, "user", message, now);
-      appendConversationMessage(conversation, "assistant", reply, now + 1);
-      appendConversationMessage(conversation, "assistant", "", now + 2, {
-        kind: "song",
-        songId: song.id,
-        songTitle: song.title,
-        songArtist: song.artist,
-        songUrl
-      });
-      userStore.updatedAt = now + 2;
-      save();
-    }
+    const now = Date.now();
+    appendConversationMessage(conversation, "user", message, now);
+    appendConversationMessage(conversation, "assistant", reply, now + 1);
+    appendConversationMessage(conversation, "assistant", "", now + 2, {
+      kind: "song",
+      songId: song.id,
+      songTitle: song.title,
+      songArtist: song.artist,
+      songUrl
+    });
+    userStore.updatedAt = now + 2;
+    save();
     sendJson(res, 200, {
       reply,
       kind: "song",
@@ -1282,18 +1845,16 @@ async function handleChat(req, res) {
 
   if (shouldGenerateImage(message, config)) {
     const imageConfig = getImageConfig(config);
-    const limitKey = getImageLimitKey({ sessionId, password, userKey });
+    const limitKey = getImageLimitKey({ userKey });
     const cooldownMs = getImageCooldownMs(limitKey);
     if (cooldownMs > 0) {
       const waitMinutes = Math.ceil(cooldownMs / 60000);
       const reply = `图片生成需要稍等一下……大约 ${waitMinutes} 分钟后再试。`;
-      if (!stateless) {
-        const now = Date.now();
-        appendConversationMessage(conversation, "user", message, now);
-        appendConversationMessage(conversation, "assistant", reply, now + 1);
-        userStore.updatedAt = now + 1;
-        save();
-      }
+      const now = Date.now();
+      appendConversationMessage(conversation, "user", message, now);
+      appendConversationMessage(conversation, "assistant", reply, now + 1);
+      userStore.updatedAt = now + 1;
+      save();
       sendJson(res, 200, {
         reply,
         model: imageConfig.model,
@@ -1332,21 +1893,19 @@ async function handleChat(req, res) {
     }
 
     const usage = getUsageFromPayload(payload);
-    recordUsageEvent({ type: "image", ...usage });
+    recordUsageEvent({ type: "image", ...usage, ip: clientIp });
     markImageGenerated(limitKey);
 
     const reply = "我画好了……给你。";
-    if (!stateless) {
-      const now = Date.now();
-      appendConversationMessage(conversation, "user", message, now);
-      appendConversationMessage(conversation, "assistant", reply, now + 1, {
-        kind: "image",
-        imageUrl,
-        imagePrompt
-      });
-      userStore.updatedAt = now + 1;
-      save();
-    }
+    const now = Date.now();
+    appendConversationMessage(conversation, "user", message, now);
+    appendConversationMessage(conversation, "assistant", reply, now + 1, {
+      kind: "image",
+      imageUrl,
+      imagePrompt
+    });
+    userStore.updatedAt = now + 1;
+    save();
 
     sendJson(res, 200, {
       reply,
@@ -1370,7 +1929,7 @@ async function handleChat(req, res) {
     temperature: Number(chatConfig.temperature) || 0.8,
     max_tokens: Number(chatConfig.maxTokens) || 800,
     stream: false,
-    messages: buildChatMessages(chatConfig, conversation.messages || [], message, stateless)
+    messages: buildChatMessages(chatConfig, conversation.messages || [], message, false)
   };
 
   let apiResult;
@@ -1396,15 +1955,13 @@ async function handleChat(req, res) {
   }
 
   const usage = getUsageFromPayload(payload);
-  recordTokenUsage(usage);
+  recordTokenUsage({ ...usage, ip: clientIp });
 
-  if (!stateless) {
-    const now = Date.now();
-    appendConversationMessage(conversation, "user", message, now);
-    appendConversationMessage(conversation, "assistant", reply.trim(), now + 1);
-    userStore.updatedAt = now + 1;
-    save();
-  }
+  const now = Date.now();
+  appendConversationMessage(conversation, "user", message, now);
+  appendConversationMessage(conversation, "assistant", reply.trim(), now + 1);
+  userStore.updatedAt = now + 1;
+  save();
 
   sendJson(res, 200, {
     reply: reply.trim(),
@@ -1422,12 +1979,10 @@ async function handleChat(req, res) {
 
 async function handleSessionState(req, res) {
   const body = req.method === "POST" ? await parseBody(req) : {};
-  const search = new URL(req.url, `http://${req.headers.host}`).searchParams;
-  const sessionId = (body.sessionId || search.get("sessionId") || "").toString().trim();
-  const password = (body.password || search.get("password") || "").toString();
+  const ip = getClientIp(req);
 
   cleanupExpiredPersistentUsers();
-  const { key, userStore, persistent, save } = getOrCreateUserStore({ sessionId, password });
+  const { userStore, persistent, save } = getOrCreateUserStore({ ip });
   save();
 
   const conversations = userStore.conversations
@@ -1436,23 +1991,20 @@ async function handleSessionState(req, res) {
   const activeConversation = conversations[0];
 
   sendJson(res, 200, {
-    sessionId: persistent ? sessionId || crypto.randomUUID() : key,
     persistent,
     userAvatarUrl: resolveUserAvatarUrl(loadConfig(), userStore),
     conversationId: activeConversation?.id || "",
     conversations: conversations.map(sanitizeConversation),
     messages: Array.isArray(activeConversation?.messages) ? activeConversation.messages : [],
-    retentionDays: 7
+    retentionDays: 3
   });
 }
 
 async function handleConversationCreate(req, res) {
   const body = await parseBody(req);
-  const sessionId = typeof body.sessionId === "string" ? body.sessionId.trim() : "";
-  const password = typeof body.password === "string" ? body.password : "";
   const title = typeof body.title === "string" ? body.title.trim() : "新对话";
   cleanupExpiredPersistentUsers();
-  const { userStore, persistent, save } = getOrCreateUserStore({ sessionId, password });
+  const { userStore, persistent, save } = getOrCreateUserStore({ ip: getClientIp(req) });
   const now = Date.now();
   const conversation = createConversation({ title: title || "新对话", now });
   userStore.conversations.unshift(conversation);
@@ -1471,11 +2023,9 @@ async function handleConversationCreate(req, res) {
 
 async function handleConversationGet(req, res) {
   const url = new URL(req.url, `http://${req.headers.host}`);
-  const sessionId = (url.searchParams.get("sessionId") || "").trim();
-  const password = (url.searchParams.get("password") || "").toString();
   const conversationId = (url.searchParams.get("conversationId") || "").trim();
   cleanupExpiredPersistentUsers();
-  const { userStore } = getOrCreateUserStore({ sessionId, password });
+  const { userStore } = getOrCreateUserStore({ ip: getClientIp(req) });
   const conversation = ensureConversation(userStore, conversationId);
 
   sendJson(res, 200, {
@@ -1486,8 +2036,6 @@ async function handleConversationGet(req, res) {
 
 async function handleConversationDelete(req, res) {
   const body = await parseBody(req);
-  const sessionId = typeof body.sessionId === "string" ? body.sessionId.trim() : "";
-  const password = typeof body.password === "string" ? body.password : "";
   const conversationId = typeof body.conversationId === "string" ? body.conversationId.trim() : "";
 
   if (!conversationId) {
@@ -1496,7 +2044,7 @@ async function handleConversationDelete(req, res) {
   }
 
   cleanupExpiredPersistentUsers();
-  const { userStore, save } = getOrCreateUserStore({ sessionId, password });
+  const { userStore, save } = getOrCreateUserStore({ ip: getClientIp(req) });
   userStore.conversations = (userStore.conversations || []).filter((item) => item.id !== conversationId);
   if (userStore.conversations.length === 0) {
     userStore.conversations = [createConversation()];
@@ -1513,16 +2061,10 @@ async function handleConversationDelete(req, res) {
 
 async function handleUserProfilePut(req, res) {
   const body = await parseBody(req);
-  const sessionId = typeof body.sessionId === "string" ? body.sessionId.trim() : "";
-  const password = typeof body.password === "string" ? body.password : "";
   const userAvatarPath = typeof body.userAvatarPath === "string" ? body.userAvatarPath.trim() : "";
   const userAvatarData = typeof body.userAvatarData === "string" ? body.userAvatarData.trim() : "";
   const config = loadConfig();
-  const { userStore, save, persistent, key } = getOrCreateUserStore({ sessionId, password });
-  if (!persistent) {
-    sendJson(res, 400, { error: "匿名模式不会保存用户头像，请先输入密码。" });
-    return;
-  }
+  const { userStore, save, key } = getOrCreateUserStore({ ip: getClientIp(req) });
 
   if (userAvatarData) {
     userStore.userAvatarPath = saveUserAvatarFromDataUrl(key, userAvatarData);
@@ -1867,7 +2409,7 @@ async function handleAdminTestImageConnection(req, res) {
     }
 
     const usage = getUsageFromPayload(payload);
-    recordUsageEvent({ type: "image", ...usage });
+    recordUsageEvent({ type: "image", ...usage, ip: getClientIp(req) });
     sendJson(res, 200, { ok: true, message: `图片 API 连通成功 · 模型 ${imageConfig.model} 已返回图片`, imageUrl: generatedImage });
   } catch (error) {
     sendJson(res, 200, { ok: false, message: `图片 API 连接失败: ${error.message}` });
@@ -2009,6 +2551,11 @@ async function handleAdminTokenStats(req, res) {
   const url = new URL(req.url, `http://${req.headers.host}`);
   const range = url.searchParams.get("range") || "all";
   sendJson(res, 200, getTokenStats(range));
+}
+
+async function handleAdminConversationAudit(req, res) {
+  if (!requireAdminAuth(req, res)) return;
+  sendJson(res, 200, getAdminConversationAudit());
 }
 
 async function handleAdminCacheClear(req, res) {
@@ -2192,6 +2739,66 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    if (req.method === "GET" && url.pathname === "/api/admin/conversations") {
+      await handleAdminConversationAudit(req, res);
+      return;
+    }
+
+    if (req.method === "PATCH" && url.pathname === "/api/admin/audit/ip") {
+      await handleAdminAuditIpUpdate(req, res);
+      return;
+    }
+
+    if (req.method === "DELETE" && url.pathname === "/api/admin/audit/ip") {
+      await handleAdminAuditIpDelete(req, res);
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/admin/token-event") {
+      await handleAdminTokenEventCreate(req, res);
+      return;
+    }
+
+    if (req.method === "PATCH" && url.pathname === "/api/admin/token-event") {
+      await handleAdminTokenEventUpdate(req, res);
+      return;
+    }
+
+    if (req.method === "DELETE" && url.pathname === "/api/admin/token-event") {
+      await handleAdminTokenEventDelete(req, res);
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/admin/conversation") {
+      await handleAdminConversationCreate(req, res);
+      return;
+    }
+
+    if (req.method === "PATCH" && url.pathname === "/api/admin/conversation") {
+      await handleAdminConversationUpdate(req, res);
+      return;
+    }
+
+    if (req.method === "DELETE" && url.pathname === "/api/admin/conversation") {
+      await handleAdminConversationDelete(req, res);
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/admin/message") {
+      await handleAdminMessageCreate(req, res);
+      return;
+    }
+
+    if (req.method === "PATCH" && url.pathname === "/api/admin/message") {
+      await handleAdminMessageUpdate(req, res);
+      return;
+    }
+
+    if (req.method === "DELETE" && url.pathname === "/api/admin/message") {
+      await handleAdminMessageDelete(req, res);
+      return;
+    }
+
     if (req.method === "POST" && url.pathname === "/api/admin/cache/clear") {
       await handleAdminCacheClear(req, res);
       return;
@@ -2206,7 +2813,12 @@ const server = http.createServer(async (req, res) => {
 setInterval(() => {
   cleanupVisitors();
   cleanupExpiredPersistentUsers();
+  saveTokenUsageEvents();
 }, 10 * 60 * 1000).unref();
+
+ensureDataFiles();
+loadTokenUsageEvents();
+cleanupExpiredPersistentUsers();
 
 server.listen(PORT, HOST, () => {
   console.log(`Firefly Chat running at http://${HOST}:${PORT}`);

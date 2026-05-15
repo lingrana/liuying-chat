@@ -1,13 +1,18 @@
+# Dependencies
 node_modules/
-npm-debug.log*
 
-server.out.log
-server.err.log
+# Data and privacy
+data/
 *.log
 
-data/config.json
-data/users/
-data/songs/
+# OS files
+.DS_Store
+Thumbs.db
 
+# IDE
+.vscode/
+.idea/
+
+# Environment
 .env
-.env.*
+.env.local

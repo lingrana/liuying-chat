@@ -12,45 +12,34 @@ const headerDot = document.getElementById("headerDot");
 const newConversationButton = document.getElementById("newConversationButton");
 const toggleSessionPanelButton = document.getElementById("toggleSessionPanelButton");
 const sessionPanel = document.getElementById("sessionPanel");
-const avatarPanel = document.getElementById("avatarPanel");
 const sessionModeText = document.getElementById("sessionModeText");
 const conversationList = document.getElementById("conversationList");
-const noMemoryToggle = document.getElementById("noMemoryToggle");
-const passwordInput = document.getElementById("passwordInput");
-const passwordSubmitButton = document.getElementById("passwordSubmitButton");
-const openPasswordModalButton = document.getElementById("openPasswordModalButton");
-const passwordModal = document.getElementById("passwordModal");
-const passwordCancelButton = document.getElementById("passwordCancelButton");
-const passwordModalStatus = document.getElementById("passwordModalStatus");
 const openNoticeButton = document.getElementById("openNoticeButton");
 const noticeModal = document.getElementById("noticeModal");
 const noticeCloseButton = document.getElementById("noticeCloseButton");
-const saveAvatarButton = document.getElementById("saveAvatarButton");
-const userAvatarPathInput = document.getElementById("userAvatarPathInput");
-const userAvatarFileInput = document.getElementById("userAvatarFileInput");
-const userAvatarFileName = document.getElementById("userAvatarFileName");
 const panelStatus = document.getElementById("panelStatus");
-const avatarPanelStatus = document.getElementById("avatarPanelStatus");
 
-const SESSION_KEY = "firefly-chat-session-v2";
-const PASSWORD_KEY = "firefly-chat-password-v2";
+const toggleAvatarPanelButton = document.getElementById("toggleAvatarPanelButton");
+const avatarPanel = document.getElementById("avatarPanel");
+const headerUserAvatar = document.getElementById("headerUserAvatar");
+const avatarPreview = document.getElementById("avatarPreview");
+const avatarFileInput = document.getElementById("avatarFileInput");
+const avatarFileText = document.getElementById("avatarFileText");
+const avatarUrlInput = document.getElementById("avatarUrlInput");
+const saveAvatarButton = document.getElementById("saveAvatarButton");
+const closeAvatarPanelButton = document.getElementById("closeAvatarPanelButton");
+const avatarStatus = document.getElementById("avatarStatus");
+
 const CONVERSATION_KEY = "firefly-chat-conversation-v2";
-const NO_MEMORY_KEY = "firefly-chat-no-memory-v2";
 const NOTICE_SEEN_KEY = "firefly-chat-notice-seen-v1";
 
-let sessionId = localStorage.getItem(SESSION_KEY) || crypto.randomUUID();
-let activePassword = localStorage.getItem(PASSWORD_KEY) || "";
 let activeConversationId = localStorage.getItem(CONVERSATION_KEY) || "";
-let statelessMode = localStorage.getItem(NO_MEMORY_KEY) === "1";
 let heartbeatTimer = null;
 let assistantAvatarUrl = "/api/avatar/assistant";
 let userAvatarUrl = "/api/avatar/user";
 let conversations = [];
 let currentMessages = [];
 let modelName = "";
-let isPersistentUser = Boolean(activePassword);
-
-localStorage.setItem(SESSION_KEY, sessionId);
 
 function setPanelStatus(text, isError = false) {
   if (!panelStatus) return;
@@ -58,18 +47,28 @@ function setPanelStatus(text, isError = false) {
   panelStatus.classList.toggle("error", Boolean(isError));
 }
 
-function setAvatarPanelStatus(text, isError = false) {
-  if (!avatarPanelStatus) return;
-  avatarPanelStatus.textContent = text || "";
-  avatarPanelStatus.classList.toggle("error", Boolean(isError));
-}
-
 function setSessionPanelOpen(open) {
   sessionPanel.classList.toggle("open", open);
+  if (open) {
+    avatarPanel.classList.remove("open");
+  }
 }
 
 function setAvatarPanelOpen(open) {
   avatarPanel.classList.toggle("open", open);
+  if (open) {
+    sessionPanel.classList.remove("open");
+    avatarPreview.src = userAvatarUrl;
+    avatarUrlInput.value = "";
+    avatarFileText.textContent = "未选择文件";
+    avatarStatus.textContent = "";
+  }
+}
+
+function setAvatarStatus(text, isError = false) {
+  if (!avatarStatus) return;
+  avatarStatus.textContent = text || "";
+  avatarStatus.style.color = isError ? "#d44" : "var(--accent)";
 }
 
 function setNoticeModalOpen(open, remember = true) {
@@ -77,7 +76,6 @@ function setNoticeModalOpen(open, remember = true) {
   noticeModal.classList.toggle("open", open);
   if (open) {
     setSessionPanelOpen(false);
-    setAvatarPanelOpen(false);
   } else if (remember) {
     localStorage.setItem(NOTICE_SEEN_KEY, "1");
   }
@@ -389,8 +387,6 @@ function renderConversations() {
         const data = await fetchJson("/api/conversation", {
           method: "DELETE",
           body: JSON.stringify({
-            sessionId,
-            password: activePassword,
             conversationId: targetId
           })
         });
@@ -409,17 +405,8 @@ function renderConversations() {
 
 function updateSessionSummary() {
   if (sessionModeText) {
-    sessionModeText.textContent = isPersistentUser ? "密码用户 · 7天保存" : "当前为临时聊天模式，关闭页面后记录不会保留";
+    sessionModeText.textContent = "当前对话记录保留 3 天";
   }
-  if (noMemoryToggle) {
-    noMemoryToggle.checked = statelessMode;
-  }
-}
-
-function updateAvatarFileName() {
-  if (!userAvatarFileName) return;
-  const file = userAvatarFileInput?.files?.[0];
-  userAvatarFileName.textContent = file ? file.name : "未选择文件";
 }
 
 async function fetchJson(url, options = {}) {
@@ -469,14 +456,9 @@ async function sendHeartbeat() {
     const data = await fetchJson("/api/heartbeat", {
       method: "POST",
       body: JSON.stringify({
-        sessionId,
         page: "chat"
       })
     });
-    if (data.sessionId && data.sessionId !== sessionId) {
-      sessionId = data.sessionId;
-      localStorage.setItem(SESSION_KEY, sessionId);
-    }
     visitorCount.textContent = `在线 ${data.onlineCount || 0} 人`;
   } catch {
     visitorCount.textContent = "在线人数读取失败";
@@ -486,25 +468,18 @@ async function sendHeartbeat() {
 async function loadSessionState() {
   const data = await fetchJson("/api/session/state", {
     method: "POST",
-    body: JSON.stringify({
-      sessionId,
-      password: activePassword
-    })
+    body: JSON.stringify({})
   });
 
-  isPersistentUser = Boolean(data.persistent);
   activeConversationId = data.conversationId || "";
   conversations = Array.isArray(data.conversations) ? data.conversations : [];
   currentMessages = Array.isArray(data.messages) ? data.messages : [];
   userAvatarUrl = data.userAvatarUrl || userAvatarUrl;
 
-  localStorage.setItem(SESSION_KEY, data.sessionId || sessionId);
   localStorage.setItem(CONVERSATION_KEY, activeConversationId);
-  if (activePassword) {
-    localStorage.setItem(PASSWORD_KEY, activePassword);
-  } else {
-    localStorage.removeItem(PASSWORD_KEY);
-  }
+
+  // 更新头像
+  if (headerUserAvatar) headerUserAvatar.src = userAvatarUrl;
 
   updateSessionSummary();
   renderConversations();
@@ -513,8 +488,6 @@ async function loadSessionState() {
 
 async function loadConversation(conversationId) {
   const params = new URLSearchParams({
-    sessionId,
-    password: activePassword,
     conversationId
   });
   const data = await fetchJson(`/api/conversation?${params.toString()}`);
@@ -526,8 +499,6 @@ async function createConversation() {
   const data = await fetchJson("/api/conversations", {
     method: "POST",
     body: JSON.stringify({
-      sessionId,
-      password: activePassword,
       title: "新对话"
     })
   });
@@ -538,56 +509,6 @@ async function createConversation() {
   renderConversations();
   renderMessages([]);
   setPanelStatus("已新建对话");
-}
-
-async function switchToPasswordMode() {
-  const nextPassword = passwordInput.value.trim();
-  if (!nextPassword) {
-    if (passwordModalStatus) passwordModalStatus.textContent = "请输入密码";
-    return;
-  }
-  activePassword = nextPassword;
-  if (passwordModalStatus) passwordModalStatus.textContent = "正在读取…";
-  await loadSessionState();
-  if (passwordModal) passwordModal.classList.remove("open");
-  if (passwordModalStatus) passwordModalStatus.textContent = "";
-  passwordInput.value = "";
-  setPanelStatus("已进入独立会话");
-}
-
-async function saveUserAvatar() {
-  if (!isPersistentUser) {
-    setAvatarPanelStatus("匿名模式不会保存用户头像，请先输入密码。", true);
-    return;
-  }
-
-  let userAvatarData = "";
-  const file = userAvatarFileInput?.files?.[0];
-  if (file) {
-    userAvatarData = await new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(String(reader.result || ""));
-      reader.onerror = () => reject(new Error("头像文件读取失败。"));
-      reader.readAsDataURL(file);
-    });
-  }
-
-  const data = await fetchJson("/api/user/profile", {
-    method: "PUT",
-    body: JSON.stringify({
-      sessionId,
-      password: activePassword,
-      userAvatarPath: userAvatarPathInput.value.trim(),
-      userAvatarData
-    })
-  });
-  userAvatarUrl = data.userAvatarUrl || userAvatarUrl;
-  if (userAvatarFileInput) {
-    userAvatarFileInput.value = "";
-  }
-  updateAvatarFileName();
-  renderMessages(currentMessages);
-  setAvatarPanelStatus("用户头像已保存");
 }
 
 async function sendMessage() {
@@ -606,10 +527,7 @@ async function sendMessage() {
     const data = await fetchJson("/api/chat", {
       method: "POST",
       body: JSON.stringify({
-        sessionId,
-        password: activePassword,
         conversationId: activeConversationId,
-        stateless: statelessMode,
         message: content
       })
     });
@@ -654,12 +572,6 @@ async function sendMessage() {
 }
 
 function clearAnonymousView() {
-  if (statelessMode) {
-    currentMessages = [];
-    renderMessages([]);
-    return;
-  }
-
   createConversation().catch((error) => {
     setPanelStatus(error.message || "新建对话失败", true);
   });
@@ -672,39 +584,58 @@ function bindEvents() {
   });
   toggleSessionPanelButton.addEventListener("click", () => {
     setSessionPanelOpen(!sessionPanel.classList.contains("open"));
-    setAvatarPanelOpen(false);
   });
-  passwordSubmitButton.addEventListener("click", () => {
-    switchToPasswordMode().catch((error) => {
-      if (passwordModalStatus) passwordModalStatus.textContent = error.message || "切换失败";
+  if (toggleAvatarPanelButton) {
+    toggleAvatarPanelButton.addEventListener("click", () => {
+      setAvatarPanelOpen(!avatarPanel.classList.contains("open"));
     });
+  }
+
+  // 点击空白处关闭面板
+  document.addEventListener("click", (e) => {
+    if (sessionPanel.classList.contains("open") && 
+        !sessionPanel.contains(e.target) && 
+        e.target !== toggleSessionPanelButton &&
+        !toggleSessionPanelButton.contains(e.target)) {
+      setSessionPanelOpen(false);
+    }
+    if (avatarPanel.classList.contains("open") && 
+        !avatarPanel.contains(e.target) && 
+        e.target !== toggleAvatarPanelButton &&
+        !toggleAvatarPanelButton.contains(e.target)) {
+      setAvatarPanelOpen(false);
+    }
   });
-  if (openPasswordModalButton) {
-    openPasswordModalButton.addEventListener("click", () => {
-      if (passwordModal) passwordModal.classList.add("open");
-      setSessionPanelOpen(false);
+  if (closeAvatarPanelButton) {
+    closeAvatarPanelButton.addEventListener("click", () => {
+      setAvatarPanelOpen(false);
     });
   }
-  const openAvatarPanelButton = document.getElementById("openAvatarPanelButton");
-  if (openAvatarPanelButton) {
-    openAvatarPanelButton.addEventListener("click", () => {
-      setSessionPanelOpen(false);
-      setAvatarPanelOpen(true);
-    });
-  }
-  if (passwordCancelButton) {
-    passwordCancelButton.addEventListener("click", () => {
-      if (passwordModal) passwordModal.classList.remove("open");
-      if (passwordModalStatus) passwordModalStatus.textContent = "";
-    });
-  }
-  if (passwordModal) {
-    passwordModal.addEventListener("click", (e) => {
-      if (e.target === passwordModal) {
-        passwordModal.classList.remove("open");
-        if (passwordModalStatus) passwordModalStatus.textContent = "";
+  if (avatarFileInput) {
+    avatarFileInput.addEventListener("change", () => {
+      const file = avatarFileInput.files?.[0];
+      if (file) {
+        avatarFileText.textContent = file.name;
+        const reader = new FileReader();
+        reader.onload = () => {
+          avatarPreview.src = reader.result;
+        };
+        reader.readAsDataURL(file);
+      } else {
+        avatarFileText.textContent = "未选择文件";
       }
     });
+  }
+  if (avatarUrlInput) {
+    avatarUrlInput.addEventListener("input", () => {
+      const url = avatarUrlInput.value.trim();
+      if (url) {
+        avatarPreview.src = url;
+      }
+    });
+  }
+  if (saveAvatarButton) {
+    saveAvatarButton.addEventListener("click", saveAvatar);
   }
   if (openNoticeButton) {
     openNoticeButton.addEventListener("click", () => {
@@ -723,22 +654,6 @@ function bindEvents() {
       }
     });
   }
-  saveAvatarButton.addEventListener("click", () => {
-    saveUserAvatar().catch((error) => {
-      setAvatarPanelStatus(error.message || "保存头像失败", true);
-    });
-  });
-  userAvatarFileInput?.addEventListener("change", updateAvatarFileName);
-  noMemoryToggle.addEventListener("change", () => {
-    statelessMode = noMemoryToggle.checked;
-    localStorage.setItem(NO_MEMORY_KEY, statelessMode ? "1" : "0");
-    if (composerHint) {
-      composerHint.textContent = statelessMode
-        ? "当前为无记忆模式 · Enter 发送 · Shift+Enter 换行"
-        : "Enter 发送 · Shift+Enter 换行";
-    }
-  });
-
   messageInput.addEventListener("input", autoResize);
   messageInput.addEventListener("keydown", (event) => {
     if (event.key === "Enter" && !event.shiftKey) {
@@ -748,10 +663,71 @@ function bindEvents() {
   });
 }
 
+async function saveAvatar() {
+  const file = avatarFileInput?.files?.[0];
+  const url = avatarUrlInput?.value.trim() || "";
+
+  if (!file && !url) {
+    setAvatarStatus("请选择文件或输入图片链接", true);
+    return;
+  }
+
+  setAvatarStatus("保存中...");
+  saveAvatarButton.disabled = true;
+
+  try {
+    const body = {};
+
+    if (file) {
+      const dataUrl = await readFileAsDataUrl(file);
+      body.userAvatarData = dataUrl;
+    } else {
+      body.userAvatarPath = url;
+    }
+
+    const data = await fetchJson("/api/user/profile", {
+      method: "PUT",
+      body: JSON.stringify(body)
+    });
+
+    if (data.userAvatarUrl) {
+      userAvatarUrl = data.userAvatarUrl;
+      headerUserAvatar.src = userAvatarUrl;
+      avatarPreview.src = userAvatarUrl;
+      updateAllUserAvatars();
+    }
+
+    setAvatarStatus("头像已保存");
+    setTimeout(() => {
+      setAvatarPanelOpen(false);
+    }, 1000);
+  } catch (error) {
+    setAvatarStatus(error.message || "保存失败", true);
+  } finally {
+    saveAvatarButton.disabled = false;
+  }
+}
+
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error("读取文件失败"));
+    reader.readAsDataURL(file);
+  });
+}
+
+function updateAllUserAvatars() {
+  document.querySelectorAll('.msg-avatar').forEach(img => {
+    if (img.alt === '用户') {
+      img.src = userAvatarUrl;
+    }
+  });
+}
+
 async function init() {
   bindEvents();
   autoResize();
-  updateAvatarFileName();
   updateSessionSummary();
   await fetchPublicConfig();
   await loadSessionState();

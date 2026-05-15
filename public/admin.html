@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>流萤 · 后台管理</title>
+  <link rel="icon" type="image/png" href="/ly.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@300;400;600;700&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
   <style>
@@ -30,6 +31,7 @@
       --shadow-sm: 0 1px 3px rgba(0,0,0,0.06);
       --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
       --shadow-lg: 0 8px 30px rgba(0,0,0,0.1);
+      --sidebar-width: 240px;
     }
 
     *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
@@ -50,338 +52,6 @@
         radial-gradient(ellipse 50% 50% at 15% 25%, rgba(46,168,122,0.04) 0%, transparent 55%),
         radial-gradient(ellipse 55% 50% at 80% 75%, rgba(26,107,78,0.03) 0%, transparent 50%);
       pointer-events: none;
-    }
-
-    .admin-shell {
-      max-width: 1100px;
-      margin: 0 auto;
-      padding: 2.5rem 2.5rem;
-      position: relative;
-      z-index: 1;
-    }
-
-    /* ── Back Link ── */
-    .back-link {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.4rem;
-      font-family: 'DM Mono', monospace;
-      font-size: 0.68rem;
-      color: var(--text-dim);
-      text-decoration: none;
-      margin-bottom: 2rem;
-      transition: color 0.25s ease;
-      opacity: 0;
-      animation: slideUp 0.5s 0.05s forwards;
-    }
-
-    .back-link:hover { color: var(--accent); }
-
-    .back-link svg { width: 14px; height: 14px; }
-
-    /* ── Hero ── */
-    .admin-hero {
-      margin-bottom: 2.5rem;
-      opacity: 0;
-      animation: slideUp 0.6s 0.1s forwards;
-    }
-
-    .admin-hero .eyebrow {
-      font-family: 'DM Mono', monospace;
-      font-size: 0.62rem;
-      font-weight: 500;
-      text-transform: uppercase;
-      letter-spacing: 0.22em;
-      color: var(--accent);
-      margin-bottom: 1rem;
-    }
-
-    .admin-hero h1 {
-      font-size: 2rem;
-      font-weight: 700;
-      letter-spacing: -0.02em;
-      margin-bottom: 0.5rem;
-      background: linear-gradient(135deg, var(--accent-deep) 0%, var(--accent) 100%);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
-    }
-
-    .admin-hero p {
-      font-size: 0.88rem;
-      font-weight: 300;
-      color: var(--text-mid);
-      line-height: 1.6;
-    }
-
-    /* ── Grid ── */
-    .admin-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 1.25rem;
-    }
-
-    /* ── Cards ── */
-    .card {
-      background: var(--surface);
-      border: 1px solid var(--border-light);
-      border-radius: 14px;
-      padding: 1.6rem;
-      position: relative;
-      overflow: hidden;
-      opacity: 0;
-      animation: slideUp 0.6s forwards;
-      box-shadow: var(--shadow-sm);
-    }
-
-    .card:nth-child(1) { animation-delay: 0.2s; }
-    .card:nth-child(2) { animation-delay: 0.35s; }
-    .card:nth-child(3) { animation-delay: 0.5s; }
-
-    .card::before {
-      content: '';
-      position: absolute;
-      top: 0; left: 0; right: 0;
-      height: 1px;
-      background: linear-gradient(90deg, transparent, rgba(46,168,122,0.2), transparent);
-    }
-
-    .card h2 {
-      font-size: 0.9rem;
-      font-weight: 600;
-      margin-bottom: 1.35rem;
-      display: flex;
-      align-items: center;
-      gap: 0.55rem;
-      color: var(--text);
-    }
-
-    .card h2::before {
-      content: '';
-      width: 3px;
-      height: 13px;
-      background: var(--accent);
-      border-radius: 2px;
-      box-shadow: 0 0 6px rgba(46,168,122,0.3);
-    }
-
-    /* ── Metrics ── */
-    .metric-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 0.9rem;
-      margin-bottom: 1.25rem;
-    }
-
-    .metric-item {
-      background: rgba(46,168,122,0.03);
-      border: 1px solid var(--border-light);
-      border-radius: 11px;
-      padding: 1.15rem;
-      transition: all 0.3s ease;
-    }
-
-    .metric-item:hover {
-      border-color: rgba(46,168,122,0.25);
-      background: rgba(46,168,122,0.05);
-    }
-
-    .metric-label {
-      font-family: 'DM Mono', monospace;
-      font-size: 0.58rem;
-      font-weight: 400;
-      text-transform: uppercase;
-      letter-spacing: 0.12em;
-      color: var(--text-dim);
-      display: block;
-      margin-bottom: 0.55rem;
-    }
-
-    .metric-value {
-      font-family: 'DM Mono', monospace;
-      font-size: 1.85rem;
-      font-weight: 500;
-      color: var(--text);
-      line-height: 1;
-    }
-
-    .metric-value.accent {
-      color: var(--accent);
-      text-shadow: 0 0 20px rgba(46,168,122,0.15);
-    }
-
-    .card-title-row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      flex-wrap: wrap;
-      gap: 1rem;
-      margin-bottom: 1.35rem;
-    }
-
-    .card-title-row h2 {
-      margin-bottom: 0;
-    }
-
-    .range-toggle {
-      display: inline-flex;
-      gap: 0.25rem;
-      padding: 0.25rem;
-      border: 1px solid var(--border-light);
-      border-radius: 9px;
-      background: rgba(46,168,122,0.03);
-    }
-
-    .range-toggle button {
-      border: 0;
-      border-radius: 7px;
-      padding: 0.35rem 0.65rem;
-      background: transparent;
-      color: var(--text-dim);
-      font-family: 'DM Mono', monospace;
-      font-size: 0.62rem;
-      cursor: pointer;
-      transition: all 0.2s ease;
-    }
-
-    .range-toggle button.active {
-      background: var(--accent);
-      color: white;
-      box-shadow: 0 6px 18px rgba(46,168,122,0.18);
-    }
-
-    /* ── Visitor List ── */
-    .visitor-list {
-      display: flex;
-      flex-direction: column;
-      gap: 0.5rem;
-      max-height: 240px;
-      overflow-y: auto;
-    }
-
-    .visitor-list::-webkit-scrollbar { width: 3px; }
-    .visitor-list::-webkit-scrollbar-track { background: transparent; }
-    .visitor-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-
-    .visitor-item {
-      display: flex;
-      align-items: center;
-      gap: 0.7rem;
-      padding: 0.7rem 0.9rem;
-      background: rgba(46,168,122,0.02);
-      border: 1px solid var(--border-light);
-      border-radius: 9px;
-      transition: all 0.25s ease;
-    }
-
-    .visitor-item:hover {
-      background: rgba(46,168,122,0.05);
-      border-color: rgba(46,168,122,0.2);
-    }
-
-    .visitor-dot {
-      width: 7px;
-      height: 7px;
-      border-radius: 50%;
-      background: var(--green);
-      box-shadow: 0 0 8px var(--green-glow);
-      flex-shrink: 0;
-      animation: pulse 2.5s ease-in-out infinite;
-    }
-
-    @keyframes pulse {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.4; }
-    }
-
-    .visitor-info { flex: 1; min-width: 0; }
-
-    .visitor-id {
-      font-family: 'DM Mono', monospace;
-      font-size: 0.7rem;
-      font-weight: 400;
-      color: var(--text);
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    .visitor-page {
-      font-family: 'DM Mono', monospace;
-      font-size: 0.58rem;
-      color: var(--text-dim);
-      margin-top: 0.15rem;
-    }
-
-    .visitor-time {
-      font-family: 'DM Mono', monospace;
-      font-size: 0.58rem;
-      color: var(--text-dim);
-      flex-shrink: 0;
-    }
-
-    .empty-state {
-      text-align: center;
-      padding: 1.8rem;
-      color: var(--text-dim);
-      font-size: 0.78rem;
-      font-weight: 300;
-    }
-
-    /* ── Config Button (triggers modal) ── */
-    .config-trigger-card {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      text-align: center;
-      cursor: pointer;
-      transition: all 0.3s ease;
-      gap: 1rem;
-    }
-
-    .config-trigger-card:hover {
-      border-color: var(--accent-dim);
-      background: rgba(46,168,122,0.04);
-    }
-
-    .config-trigger-card:hover .trigger-icon {
-      box-shadow: 0 0 24px rgba(46,168,122,0.2);
-      border-color: var(--accent-dim);
-    }
-
-    .trigger-icon {
-      width: 56px;
-      height: 56px;
-      border-radius: 14px;
-      background: rgba(46,168,122,0.06);
-      border: 1px solid var(--border);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      transition: all 0.3s ease;
-    }
-
-    .trigger-icon svg {
-      width: 24px;
-      height: 24px;
-      stroke: var(--accent);
-      fill: none;
-      stroke-width: 1.5;
-      stroke-linecap: round;
-      stroke-linejoin: round;
-    }
-
-    .trigger-label {
-      font-size: 0.85rem;
-      font-weight: 400;
-      color: var(--text-mid);
-    }
-
-    .trigger-hint {
-      font-family: 'DM Mono', monospace;
-      font-size: 0.6rem;
-      color: var(--text-dim);
     }
 
     /* ═══════════ LOGIN OVERLAY ═══════════ */
@@ -514,50 +184,240 @@
       min-height: 1.2rem;
     }
 
-    /* ═══════════ MODAL ═══════════ */
-    .modal-overlay {
+    /* ═══════════ ADMIN LAYOUT ═══════════ */
+    .admin-layout {
+      display: flex;
+      min-height: 100vh;
+      position: relative;
+      z-index: 1;
+    }
+
+    /* ── Sidebar ── */
+    .admin-sidebar {
+      width: var(--sidebar-width);
+      background: var(--surface);
+      border-right: 1px solid var(--border-light);
+      padding: 1.5rem 0;
       position: fixed;
-      inset: 0;
-      background: rgba(245,250,247,0.9);
-      backdrop-filter: blur(10px);
-      -webkit-backdrop-filter: blur(10px);
-      z-index: 1000;
+      top: 0;
+      left: 0;
+      bottom: 0;
+      overflow-y: auto;
+      z-index: 10;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .admin-sidebar::-webkit-scrollbar { width: 3px; }
+    .admin-sidebar::-webkit-scrollbar-track { background: transparent; }
+    .admin-sidebar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    .sidebar-header {
+      padding: 0 1.5rem 1.5rem;
+      border-bottom: 1px solid var(--border-light);
+      margin-bottom: 1rem;
+    }
+
+    .sidebar-logo {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .sidebar-logo-icon {
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, rgba(46,168,122,0.1), rgba(76,201,154,0.08));
+      border: 1px solid rgba(46,168,122,0.2);
       display: flex;
       align-items: center;
       justify-content: center;
-      opacity: 0;
-      visibility: hidden;
-      transition: all 0.35s ease;
     }
 
-    .modal-overlay.open {
-      opacity: 1;
-      visibility: visible;
+    .sidebar-logo-icon svg {
+      width: 18px;
+      height: 18px;
+      stroke: var(--accent);
+      fill: none;
+      stroke-width: 2;
     }
 
-    .modal-panel {
-      background: var(--surface);
+    .sidebar-title {
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .sidebar-subtitle {
+      font-family: 'DM Mono', monospace;
+      font-size: 0.62rem;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+    }
+
+    .sidebar-nav {
+      flex: 1;
+      padding: 0 0.75rem;
+    }
+
+    .nav-section {
+      margin-bottom: 1.5rem;
+    }
+
+    .nav-section-title {
+      font-family: 'DM Mono', monospace;
+      font-size: 0.58rem;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.15em;
+      color: var(--text-dim);
+      padding: 0 0.75rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.7rem 0.75rem;
+      border-radius: 10px;
+      color: var(--text-mid);
+      cursor: pointer;
+      transition: all 0.2s ease;
+      font-size: 0.82rem;
+      font-weight: 400;
+      border: none;
+      background: none;
+      width: 100%;
+      text-align: left;
+    }
+
+    .nav-item:hover {
+      background: rgba(46,168,122,0.06);
+      color: var(--accent);
+    }
+
+    .nav-item.active {
+      background: rgba(46,168,122,0.1);
+      color: var(--accent);
+      font-weight: 500;
+    }
+
+    .nav-item svg {
+      width: 18px;
+      height: 18px;
+      stroke: currentColor;
+      fill: none;
+      stroke-width: 1.5;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      flex-shrink: 0;
+    }
+
+    .nav-item.active svg {
+      stroke: var(--accent);
+    }
+
+    .sidebar-footer {
+      padding: 1rem 1.5rem;
+      border-top: 1px solid var(--border-light);
+      margin-top: auto;
+    }
+
+    .back-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-family: 'DM Mono', monospace;
+      font-size: 0.68rem;
+      color: var(--text-dim);
+      text-decoration: none;
+      transition: color 0.25s ease;
+      margin-bottom: 0.75rem;
+    }
+
+    .back-link:hover { color: var(--accent); }
+    .back-link svg { width: 14px; height: 14px; }
+
+    .logout-btn {
+      font-family: 'DM Mono', monospace;
+      font-size: 0.72rem;
+      color: var(--text-dim);
+      background: rgba(0,0,0,0.03);
       border: 1px solid var(--border);
-      border-radius: 18px;
-      width: 92%;
-      max-width: 640px;
-      max-height: 88vh;
-      overflow-y: auto;
+      padding: 0.5rem 1rem;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.25s ease;
+      width: 100%;
+    }
+
+    .logout-btn:hover {
+      color: #d44;
+      border-color: rgba(220,60,60,0.2);
+      background: rgba(220,60,60,0.04);
+    }
+
+    /* ── Main Content ── */
+    .admin-main {
+      flex: 1;
+      margin-left: var(--sidebar-width);
+      padding: 2rem 2.5rem;
+      min-height: 100vh;
+    }
+
+    .admin-page {
+      display: none;
+      animation: fadeIn 0.3s ease;
+    }
+
+    .admin-page.active {
+      display: block;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .page-header {
+      margin-bottom: 2rem;
+    }
+
+    .page-header h1 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin-bottom: 0.5rem;
+      background: linear-gradient(135deg, var(--accent-deep) 0%, var(--accent) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .page-header p {
+      font-size: 0.88rem;
+      font-weight: 300;
+      color: var(--text-mid);
+      line-height: 1.6;
+    }
+
+    /* ── Cards ── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border-light);
+      border-radius: 14px;
+      padding: 1.6rem;
       position: relative;
-      transform: translateY(20px) scale(0.97);
-      transition: transform 0.35s cubic-bezier(0.22,1,0.36,1);
-      box-shadow: var(--shadow-lg);
+      overflow: hidden;
+      box-shadow: var(--shadow-sm);
+      margin-bottom: 1.5rem;
     }
 
-    .modal-overlay.open .modal-panel {
-      transform: translateY(0) scale(1);
-    }
-
-    .modal-panel::-webkit-scrollbar { width: 3px; }
-    .modal-panel::-webkit-scrollbar-track { background: transparent; }
-    .modal-panel::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-
-    .modal-panel::before {
+    .card::before {
       content: '';
       position: absolute;
       top: 0; left: 0; right: 0;
@@ -565,102 +425,309 @@
       background: linear-gradient(90deg, transparent, rgba(46,168,122,0.2), transparent);
     }
 
-    .modal-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 1rem;
-      padding: 1.5rem 1.8rem 0;
-      position: sticky;
-      top: 0;
-      background: var(--surface);
-      z-index: 2;
-      border-bottom: 1px solid var(--border-light);
-      padding-bottom: 1.15rem;
-      margin-bottom: 0;
-    }
-
-    .modal-header h2 {
-      font-size: 1rem;
+    .card h2 {
+      font-size: 0.9rem;
       font-weight: 600;
+      margin-bottom: 1.35rem;
       display: flex;
       align-items: center;
       gap: 0.55rem;
-      margin: 0;
       color: var(--text);
     }
 
-    .api-modal-tabs {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.35rem;
-      padding: 0.25rem;
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      background: rgba(46,168,122,0.035);
-      margin-left: auto;
-    }
-
-    .api-modal-tab {
-      border: 0;
-      border-radius: 7px;
-      background: transparent;
-      color: var(--text-dim);
-      cursor: pointer;
-      font-family: 'Noto Serif SC', serif;
-      font-size: 0.76rem;
-      line-height: 1;
-      padding: 0.48rem 0.85rem;
-      transition: all 0.2s ease;
-      white-space: nowrap;
-    }
-
-    .api-modal-tab:hover {
-      color: var(--accent);
-      background: rgba(46,168,122,0.06);
-    }
-
-    .api-modal-tab.active {
-      color: #ffffff;
-      background: var(--accent);
-      box-shadow: 0 2px 10px rgba(46,168,122,0.18);
-    }
-
-    .modal-header h2::before {
+    .card h2::before {
       content: '';
       width: 3px;
-      height: 14px;
+      height: 13px;
       background: var(--accent);
       border-radius: 2px;
       box-shadow: 0 0 6px rgba(46,168,122,0.3);
     }
 
-    .modal-close {
-      width: 32px;
-      height: 32px;
-      border-radius: 8px;
-      border: 1px solid var(--border);
-      background: none;
-      color: var(--text-dim);
-      cursor: pointer;
+    .card-title-row {
       display: flex;
       align-items: center;
-      justify-content: center;
-      transition: all 0.25s ease;
-      font-size: 1.1rem;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 1rem;
+      margin-bottom: 1.35rem;
+    }
+
+    .card-title-row h2 {
+      margin-bottom: 0;
+    }
+
+    /* ── Metrics ── */
+    .metric-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 0.9rem;
+      margin-bottom: 1.25rem;
+    }
+
+    .metric-item {
+      background: rgba(46,168,122,0.03);
+      border: 1px solid var(--border-light);
+      border-radius: 11px;
+      padding: 1.15rem;
+      transition: all 0.3s ease;
+    }
+
+    .metric-item:hover {
+      border-color: rgba(46,168,122,0.25);
+      background: rgba(46,168,122,0.05);
+    }
+
+    .metric-label {
+      font-family: 'DM Mono', monospace;
+      font-size: 0.58rem;
+      font-weight: 400;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--text-dim);
+      display: block;
+      margin-bottom: 0.55rem;
+    }
+
+    .metric-value {
+      font-family: 'DM Mono', monospace;
+      font-size: 1.85rem;
+      font-weight: 500;
+      color: var(--text);
       line-height: 1;
     }
 
-    .modal-close:hover {
+    .metric-value.accent {
+      color: var(--accent);
+      text-shadow: 0 0 20px rgba(46,168,122,0.15);
+    }
+
+    .range-toggle {
+      display: inline-flex;
+      gap: 0.25rem;
+      padding: 0.25rem;
+      border: 1px solid var(--border-light);
+      border-radius: 9px;
+      background: rgba(46,168,122,0.03);
+    }
+
+    .range-toggle button {
+      border: 0;
+      border-radius: 7px;
+      padding: 0.35rem 0.65rem;
+      background: transparent;
+      color: var(--text-dim);
+      font-family: 'DM Mono', monospace;
+      font-size: 0.62rem;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .range-toggle button.active {
+      background: var(--accent);
+      color: white;
+      box-shadow: 0 6px 18px rgba(46,168,122,0.18);
+    }
+
+    /* ── Audit List ── */
+    .audit-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      max-height: 520px;
+      overflow-y: auto;
+      padding-right: 0.2rem;
+    }
+
+    .audit-list::-webkit-scrollbar { width: 3px; }
+    .audit-list::-webkit-scrollbar-track { background: transparent; }
+    .audit-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    .audit-item {
+      border: 1px solid var(--border-light);
+      border-radius: 9px;
+      background: rgba(46,168,122,0.02);
+      overflow: hidden;
+    }
+
+    .audit-summary {
+      width: 100%;
+      border: 0;
+      background: transparent;
       color: var(--text);
-      border-color: var(--text-dim);
-      background: rgba(0,0,0,0.03);
+      padding: 0.8rem 0.95rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.8rem;
+      cursor: pointer;
+      text-align: left;
     }
 
-    .modal-body {
-      padding: 1.5rem 1.8rem 1.8rem;
+    .audit-ip {
+      font-family: 'DM Mono', monospace;
+      font-size: 0.78rem;
+      overflow-wrap: anywhere;
     }
 
+    .audit-meta {
+      color: var(--text-dim);
+      font-family: 'DM Mono', monospace;
+      font-size: 0.62rem;
+      white-space: nowrap;
+    }
+
+    .audit-detail {
+      display: none;
+      border-top: 1px solid var(--border-light);
+      padding: 0.8rem 0.95rem 0.95rem;
+    }
+
+    .audit-item.open .audit-detail {
+      display: block;
+    }
+
+    .audit-toolbar,
+    .audit-inline-actions {
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+      flex-wrap: wrap;
+    }
+
+    .audit-toolbar {
+      margin-bottom: 0.85rem;
+    }
+
+    .audit-action-btn {
+      border: 1px solid rgba(46,168,122,0.2);
+      background: rgba(255,255,255,0.72);
+      color: var(--text-mid);
+      border-radius: 999px;
+      padding: 0.25rem 0.65rem;
+      font-size: 0.62rem;
+      cursor: pointer;
+    }
+
+    .audit-action-btn:hover {
+      background: rgba(46,168,122,0.08);
+      color: var(--accent-deep);
+    }
+
+    .audit-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.85rem;
+    }
+
+    .audit-panel {
+      border: 1px solid var(--border-light);
+      border-radius: 8px;
+      padding: 0.75rem;
+      background: rgba(255,255,255,0.55);
+    }
+
+    .audit-section-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.6rem;
+      font-size: 0.72rem;
+      color: var(--text);
+      margin-bottom: 0.4rem;
+    }
+
+    .audit-section-sub {
+      font-family: 'DM Mono', monospace;
+      font-size: 0.56rem;
+      color: var(--text-dim);
+      margin-bottom: 0.55rem;
+      overflow-wrap: anywhere;
+    }
+
+    .audit-session {
+      margin-top: 0.7rem;
+      padding-top: 0.7rem;
+      border-top: 1px dashed rgba(46,168,122,0.15);
+    }
+
+    .audit-session:first-child {
+      margin-top: 0;
+      padding-top: 0;
+      border-top: 0;
+    }
+
+    .audit-conversation {
+      margin-top: 0.75rem;
+      padding-top: 0.75rem;
+      border-top: 1px solid var(--border-light);
+    }
+
+    .audit-conversation:first-child {
+      margin-top: 0;
+      padding-top: 0;
+      border-top: 0;
+    }
+
+    .audit-title {
+      display: flex;
+      justify-content: space-between;
+      gap: 0.8rem;
+      font-size: 0.76rem;
+      color: var(--text);
+      margin-bottom: 0.55rem;
+    }
+
+    .audit-time {
+      flex-shrink: 0;
+      color: var(--text-dim);
+      font-family: 'DM Mono', monospace;
+      font-size: 0.58rem;
+    }
+
+    .audit-message {
+      display: grid;
+      grid-template-columns: 4.2rem minmax(0, 1fr);
+      gap: 0.6rem;
+      padding: 0.45rem 0;
+      border-top: 1px dashed rgba(46,168,122,0.15);
+      font-size: 0.72rem;
+      line-height: 1.55;
+    }
+
+    .audit-message-role {
+      color: var(--text-dim);
+      font-family: 'DM Mono', monospace;
+      font-size: 0.58rem;
+    }
+
+    .audit-message-content {
+      color: var(--text);
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+
+    .audit-token-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.8rem;
+      padding: 0.45rem 0;
+      border-top: 1px dashed rgba(46,168,122,0.15);
+    }
+
+    .audit-token-row:first-of-type {
+      border-top: 0;
+      padding-top: 0.1rem;
+    }
+
+    .audit-token-main {
+      font-size: 0.68rem;
+      color: var(--text);
+      overflow-wrap: anywhere;
+    }
+
+    /* ── Config Forms ── */
     .config-form {
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -795,24 +862,6 @@
 
     .save-status.visible { opacity: 1; }
 
-    .logout-btn {
-      font-family: 'DM Mono', monospace;
-      font-size: 0.72rem;
-      color: var(--text-dim);
-      background: rgba(0,0,0,0.03);
-      border: 1px solid var(--border);
-      padding: 0.5rem 1.2rem;
-      border-radius: 8px;
-      cursor: pointer;
-      transition: all 0.25s ease;
-    }
-
-    .logout-btn:hover {
-      color: #d44;
-      border-color: rgba(220,60,60,0.2);
-      background: rgba(220,60,60,0.04);
-    }
-
     /* ── Model List ── */
     .model-toggle-btn {
       font-family: 'DM Mono', monospace;
@@ -872,13 +921,43 @@
       min-height: 1.2rem;
     }
 
-    /* ═══════════ Animations ═══════════ */
-    @keyframes slideUp {
-      from { opacity: 0; transform: translateY(16px); }
-      to { opacity: 1; transform: translateY(0); }
+    /* ── API Tabs ── */
+    .api-modal-tabs {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.25rem;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: rgba(46,168,122,0.035);
     }
 
-    /* ═══════════ Song Upload & List ═══════════ */
+    .api-modal-tab {
+      border: 0;
+      border-radius: 7px;
+      background: transparent;
+      color: var(--text-dim);
+      cursor: pointer;
+      font-family: 'Noto Serif SC', serif;
+      font-size: 0.76rem;
+      line-height: 1;
+      padding: 0.48rem 0.85rem;
+      transition: all 0.2s ease;
+      white-space: nowrap;
+    }
+
+    .api-modal-tab:hover {
+      color: var(--accent);
+      background: rgba(46,168,122,0.06);
+    }
+
+    .api-modal-tab.active {
+      color: #ffffff;
+      background: var(--accent);
+      box-shadow: 0 2px 10px rgba(46,168,122,0.18);
+    }
+
+    /* ── Song Upload & List ── */
     .song-upload-form {
       margin-bottom: 0;
     }
@@ -1149,34 +1228,102 @@
       stroke-width: 2;
     }
 
-    .song-audio-player {
-      width: 100%;
-      margin-top: 0.5rem;
-      height: 32px;
-      border-radius: 16px;
+    /* ── Empty State ── */
+    .empty-state {
+      text-align: center;
+      padding: 1.8rem;
+      color: var(--text-dim);
+      font-size: 0.78rem;
+      font-weight: 300;
     }
 
-    /* ═══════════ Responsive ═══════════ */
+    /* ── Cache Badge ── */
+    .cache-badge {
+      font-family: 'DM Mono', monospace;
+      font-size: 0.7rem;
+      color: var(--accent);
+      background: var(--accent-glow);
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+      cursor: help;
+    }
+
+    /* ── Responsive ── */
     @media (max-width: 860px) {
-      .admin-shell { padding: 1.8rem 1.5rem; }
-      .admin-grid { grid-template-columns: 1fr; }
+      .admin-sidebar {
+        width: 60px;
+        overflow: hidden;
+      }
+      
+      .sidebar-header,
+      .sidebar-footer,
+      .nav-section-title,
+      .nav-item span {
+        display: none;
+      }
+      
+      .nav-item {
+        justify-content: center;
+        padding: 0.7rem;
+      }
+      
+      .nav-item svg {
+        margin: 0;
+      }
+      
+      .admin-main {
+        margin-left: 60px;
+        padding: 1.5rem;
+      }
+      
       .config-form { grid-template-columns: 1fr; }
       .form-actions { grid-column: 1; }
-      .modal-panel { width: 96%; }
-      .modal-header { align-items: flex-start; flex-wrap: wrap; }
-      .api-modal-tabs {
-        order: 3;
-        width: 100%;
-      }
-      .api-modal-tab { flex: 1; }
-      .api-config-panel { grid-template-columns: 1fr; }
+      .audit-grid { grid-template-columns: 1fr; }
+      .audit-token-row,
+      .audit-section-title,
+      .audit-title,
+      .audit-summary { align-items: flex-start; flex-direction: column; }
+      .audit-message { grid-template-columns: 1fr; }
       .song-upload-row { flex-direction: column; }
       .song-input-group { width: 100%; }
       .song-submit-btn { width: 100%; justify-content: center; }
     }
+
+    /* ═══════════ Animations ═══════════ */
+    @keyframes slideUp {
+      from { opacity: 0; transform: translateY(16px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ── Audit Search & Filter ── */
+    #auditSearchInput:focus,
+    #auditSortSelect:focus,
+    #auditPageSize:focus {
+      border-color: var(--accent-dim);
+      box-shadow: 0 0 0 3px rgba(46,168,122,0.08);
+      background: rgba(46,168,122,0.02);
+    }
+
+    #auditSearchInput::placeholder {
+      color: var(--text-dim);
+    }
+
+    #auditRefreshButton {
+      white-space: nowrap;
+    }
+
+    #auditRefreshButton:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .audit-action-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
   </style>
 </head>
-<body class="admin-page">
+<body>
   <!-- ═══════════ LOGIN OVERLAY ═══════════ -->
   <div class="login-overlay" id="loginOverlay">
     <div class="login-card">
@@ -1194,174 +1341,278 @@
     </div>
   </div>
 
-  <!-- ═══════════ MAIN CONTENT ═══════════ -->
-  <main class="admin-shell" id="adminContent" style="display:none;">
-    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:2rem;">
-      <a href="/" class="back-link" style="margin-bottom:0;">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5m0 0 7 7m-7-7 7-7"/></svg>
-        返回聊天
-      </a>
-      <button class="logout-btn" id="logoutButton" type="button">退出登录</button>
-    </div>
-
-    <section class="admin-hero">
-      <p class="eyebrow">Firefly Console</p>
-      <h1>后台管理</h1>
-      <p>查看当前访问人数，并切换聊天 API 与角色提示词。</p>
-    </section>
-
-    <section class="admin-grid">
-      <!-- Status -->
-      <article class="card">
-        <h2>实时状态</h2>
-        <div class="metric-grid">
-          <div class="metric-item">
-            <span class="metric-label">当前在线</span>
-            <strong class="metric-value accent" id="onlineCount">0</strong>
+  <!-- ═══════════ MAIN LAYOUT ═══════════ -->
+  <div class="admin-layout" id="adminContent" style="display:none;">
+    <!-- Sidebar -->
+    <aside class="admin-sidebar">
+      <div class="sidebar-header">
+        <div class="sidebar-logo">
+          <div class="sidebar-logo-icon">
+            <img src="/ly.jpg" alt="流萤" style="width:100%;height:100%;object-fit:cover;border-radius:10px;">
           </div>
-          <div class="metric-item">
-            <span class="metric-label">累计访问</span>
-            <strong class="metric-value" id="totalVisits">0</strong>
+          <div>
+            <div class="sidebar-title">流萤</div>
+            <div class="sidebar-subtitle">Firefly Console</div>
           </div>
         </div>
-      </article>
+      </div>
 
-      <!-- Token Stats -->
-      <article class="card">
-        <div class="card-title-row">
-          <h2>Token 统计</h2>
-          <div class="range-toggle" aria-label="Token 统计范围">
-            <button type="button" class="active" data-token-range="1d">1d</button>
-            <button type="button" data-token-range="7d">7d</button>
-            <button type="button" data-token-range="all">一共</button>
-          </div>
+      <nav class="sidebar-nav">
+        <div class="nav-section">
+          <div class="nav-section-title">概览</div>
+          <button class="nav-item active" data-page="dashboard">
+            <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+            <span>仪表盘</span>
+          </button>
         </div>
-        <div class="metric-grid">
-          <div class="metric-item" style="position:relative;">
-            <span class="metric-label">对话 Token</span>
-            <strong class="metric-value accent" id="tokenTotal">0</strong>
-            <span class="cache-badge" id="cacheBadge" title="缓存命中率" style="position:absolute; top:0; right:0; font-size:0.7rem; color:var(--accent); background:var(--accent-glow); padding:0.2rem 0.5rem; border-radius:4px; cursor:help;">0%</span>
-          </div>
-          <div class="metric-item">
-            <span class="metric-label">对话请求</span>
-            <strong class="metric-value" id="tokenRequests">0</strong>
-          </div>
-          <div class="metric-item">
-            <span class="metric-label">对话输入</span>
-            <strong class="metric-value" id="tokenPrompt" style="font-size:1.2rem;">0</strong>
-          </div>
-          <div class="metric-item">
-            <span class="metric-label">对话输出</span>
-            <strong class="metric-value" id="tokenCompletion" style="font-size:1.2rem;">0</strong>
-          </div>
-          <div class="metric-item">
-            <span class="metric-label">图片 Token</span>
-            <strong class="metric-value accent" id="imageTokenTotal">0</strong>
-          </div>
-          <div class="metric-item">
-            <span class="metric-label">图片请求</span>
-            <strong class="metric-value" id="imageTokenRequests">0</strong>
-          </div>
-          <div class="metric-item">
-            <span class="metric-label">图片输入</span>
-            <strong class="metric-value" id="imageTokenPrompt" style="font-size:1.2rem;">0</strong>
-          </div>
-          <div class="metric-item">
-            <span class="metric-label">图片输出</span>
-            <strong class="metric-value" id="imageTokenCompletion" style="font-size:1.2rem;">0</strong>
-          </div>
-        </div>
-      </article>
 
-      <!-- API Config Trigger -->
-      <article class="card config-trigger-card" id="apiConfigTrigger">
-        <div class="trigger-icon">
-          <svg viewBox="0 0 24 24">
-            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
-            <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
-            <line x1="12" y1="22.08" x2="12" y2="12"/>
-          </svg>
+        <div class="nav-section">
+          <div class="nav-section-title">数据</div>
+          <button class="nav-item" data-page="tokens">
+            <svg viewBox="0 0 24 24"><rect x="3" y="12" width="4" height="9" rx="1"/><rect x="10" y="7" width="4" height="14" rx="1"/><rect x="17" y="3" width="4" height="18" rx="1"/></svg>
+            <span>Token 统计</span>
+          </button>
+          <button class="nav-item" data-page="audit">
+            <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+            <span>IP 审计</span>
+          </button>
         </div>
-        <p class="trigger-label">API 配置</p>
-        <p class="trigger-hint">对话、图片、参数</p>
-      </article>
 
-      <!-- Site Config Trigger -->
-      <article class="card config-trigger-card" id="siteConfigTrigger">
-        <div class="trigger-icon">
-          <svg viewBox="0 0 24 24">
-            <circle cx="12" cy="12" r="3"/>
-            <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
-          </svg>
+        <div class="nav-section">
+          <div class="nav-section-title">配置</div>
+          <button class="nav-item" data-page="api-config">
+            <svg viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+            <span>API 配置</span>
+          </button>
+          <button class="nav-item" data-page="site-config">
+            <svg viewBox="0 0 24 24"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+            <span>站点配置</span>
+          </button>
         </div>
-        <p class="trigger-label">站点配置</p>
-        <p class="trigger-hint">标题、头像、提示词</p>
-      </article>
 
-      <!-- Song Library -->
-      <article class="card" style="grid-column: 1 / -1;">
-        <h2>歌曲曲库</h2>
-        <p style="font-size:0.78rem; color:var(--text-dim); margin-bottom:1.2rem; line-height:1.6;">
-          上传 AI 流萤翻唱。聊天里自然提到歌名时，流萤会把已上传的版本发出来。
-        </p>
-        <form id="songUploadForm" class="song-upload-form">
-          <div class="song-upload-row">
-            <label class="song-input-group">
-              <span class="song-label">歌曲名称</span>
-              <input id="songTitleInput" name="songTitle" type="text" placeholder="请输入歌曲名" class="song-input">
-            </label>
-            <label class="song-input-group song-file-group">
-              <span class="song-label">音频文件</span>
-              <div class="song-file-wrap">
-                <input id="songFileInput" name="songFile" type="file" accept="audio/*" class="song-file-input">
-                <span class="song-file-text" id="songFileText">未选择文件</span>
-                <span class="song-file-btn">选择文件</span>
-              </div>
-            </label>
-            <button class="primary-btn song-submit-btn" id="songUploadButton" type="submit">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-              上传
-            </button>
+        <div class="nav-section">
+          <div class="nav-section-title">内容</div>
+          <button class="nav-item" data-page="songs">
+            <svg viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+            <span>歌曲曲库</span>
+          </button>
+        </div>
+      </nav>
+
+      <div class="sidebar-footer">
+        <a href="/" class="back-link">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5m0 0 7 7m-7-7 7-7"/></svg>
+          返回聊天
+        </a>
+        <button class="logout-btn" id="logoutButton" type="button">退出登录</button>
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="admin-main">
+      <!-- Dashboard Page -->
+      <div class="admin-page active" id="page-dashboard">
+        <div class="page-header">
+          <h1>仪表盘</h1>
+          <p>查看当前访问人数和系统状态概览。</p>
+        </div>
+
+        <div class="card">
+          <h2>实时状态</h2>
+          <div class="metric-grid">
+            <div class="metric-item">
+              <span class="metric-label">当前在线</span>
+              <strong class="metric-value accent" id="onlineCount">0</strong>
+            </div>
+            <div class="metric-item">
+              <span class="metric-label">累计访问</span>
+              <strong class="metric-value" id="totalVisits">0</strong>
+            </div>
+            <div class="metric-item">
+              <span class="metric-label">缓存命中率</span>
+              <strong class="metric-value accent" id="cacheHitRate">0%</strong>
+            </div>
+            <div class="metric-item">
+              <span class="metric-label">缓存大小</span>
+              <strong class="metric-value" id="cacheSizeInfo">0 / 500</strong>
+            </div>
           </div>
-          <span id="songUploadStatus" class="save-status"></span>
-        </form>
-        <div class="song-divider"></div>
-        <div class="song-list-header">
-          <span class="song-list-title">已上传歌曲</span>
-          <span class="song-list-count" id="songCount">0 首</span>
         </div>
-        <div id="songList" class="song-list"></div>
-      </article>
 
-      <!-- Test Connection -->
-      <article class="card" id="testConnectionCard">
-        <h2>连通测试</h2>
-        <p style="font-size:0.78rem; color:var(--text-dim); margin-bottom:1rem; line-height:1.6;">
-          分别测试对话 API 和图片 API。图片 API 未配置时不会影响普通对话。
-        </p>
-        <div style="display:flex; align-items:center; gap:0.8rem; flex-wrap:wrap;">
-          <button class="primary-btn" id="testConnectionButton" type="button">测试对话 API</button>
-          <button class="primary-btn" id="testImageConnectionButton" type="button">测试图片 API</button>
-          <span id="testConnectionStatus" class="save-status"></span>
-        </div>
-        <div id="testConnectionResult" style="margin-top:0.8rem; font-size:0.75rem; color:var(--text-dim); min-height:1.2rem;"></div>
-      </article>
-    </section>
-  </main>
-
-  <!-- ═══════════ API CONFIG MODAL ═══════════ -->
-  <div class="modal-overlay" id="apiConfigModal">
-      <div class="modal-panel">
-        <div class="modal-header">
-          <h2>API 配置</h2>
-          <div class="api-modal-tabs" role="tablist" aria-label="API 配置类型">
-            <button class="api-modal-tab active" type="button" role="tab" aria-selected="true" aria-controls="chatApiPanel" data-api-panel="chat">对话 API</button>
-            <button class="api-modal-tab" type="button" role="tab" aria-selected="false" aria-controls="imageApiPanel" data-api-panel="image">图片 API</button>
+        <div class="card">
+          <div class="card-title-row">
+            <h2>Token 概览</h2>
+            <div class="range-toggle" aria-label="Token 统计范围">
+              <button type="button" class="active" data-token-range="1d">1d</button>
+              <button type="button" data-token-range="7d">7d</button>
+              <button type="button" data-token-range="all">全部</button>
+            </div>
           </div>
-          <button class="modal-close" id="apiModalClose" type="button">&times;</button>
+          <div class="metric-grid">
+            <div class="metric-item">
+              <span class="metric-label">对话 Token</span>
+              <strong class="metric-value accent" id="tokenTotal">0</strong>
+            </div>
+            <div class="metric-item">
+              <span class="metric-label">对话请求</span>
+              <strong class="metric-value" id="tokenRequests">0</strong>
+            </div>
+            <div class="metric-item">
+              <span class="metric-label">图片 Token</span>
+              <strong class="metric-value accent" id="imageTokenTotal">0</strong>
+            </div>
+            <div class="metric-item">
+              <span class="metric-label">图片请求</span>
+              <strong class="metric-value" id="imageTokenRequests">0</strong>
+            </div>
+          </div>
         </div>
-        <div class="modal-body">
-          <form id="apiConfigForm" class="config-form">
+      </div>
+
+      <!-- Token Stats Page -->
+      <div class="admin-page" id="page-tokens">
+        <div class="page-header">
+          <h1>Token 统计</h1>
+          <p>查看详细的 Token 使用情况和消耗统计。</p>
+        </div>
+
+        <div class="card">
+          <div class="card-title-row">
+            <h2>Token 详细统计</h2>
+            <div class="range-toggle" aria-label="Token 统计范围">
+              <button type="button" class="active" data-token-range="1d">1d</button>
+              <button type="button" data-token-range="7d">7d</button>
+              <button type="button" data-token-range="all">全部</button>
+            </div>
+          </div>
+          <div class="metric-grid">
+            <div class="metric-item">
+              <span class="metric-label">对话 Token</span>
+              <strong class="metric-value accent" id="tokenTotalDetail">0</strong>
+            </div>
+            <div class="metric-item">
+              <span class="metric-label">对话请求</span>
+              <strong class="metric-value" id="tokenRequestsDetail">0</strong>
+            </div>
+            <div class="metric-item">
+              <span class="metric-label">对话输入</span>
+              <strong class="metric-value" id="tokenPromptDetail" style="font-size:1.2rem;">0</strong>
+            </div>
+            <div class="metric-item">
+              <span class="metric-label">对话输出</span>
+              <strong class="metric-value" id="tokenCompletionDetail" style="font-size:1.2rem;">0</strong>
+            </div>
+            <div class="metric-item">
+              <span class="metric-label">图片 Token</span>
+              <strong class="metric-value accent" id="imageTokenTotalDetail">0</strong>
+            </div>
+            <div class="metric-item">
+              <span class="metric-label">图片请求</span>
+              <strong class="metric-value" id="imageTokenRequestsDetail">0</strong>
+            </div>
+            <div class="metric-item">
+              <span class="metric-label">图片输入</span>
+              <strong class="metric-value" id="imageTokenPromptDetail" style="font-size:1.2rem;">0</strong>
+            </div>
+            <div class="metric-item">
+              <span class="metric-label">图片输出</span>
+              <strong class="metric-value" id="imageTokenCompletionDetail" style="font-size:1.2rem;">0</strong>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- IP Audit Page -->
+      <div class="admin-page" id="page-audit">
+        <div class="page-header">
+          <h1>IP 消耗与对话记录</h1>
+          <p>查看各 IP 的 Token 消耗和对话历史。<span class="metric-label" id="auditRetentionLabel">仅保留 3 天</span></p>
+        </div>
+
+        <!-- 统计卡片 -->
+        <div class="metric-grid" style="margin-bottom:1.5rem;">
+          <div class="metric-item">
+            <span class="metric-label">总 IP 数</span>
+            <strong class="metric-value" id="auditTotalIps">0</strong>
+          </div>
+          <div class="metric-item">
+            <span class="metric-label">总 Token 消耗</span>
+            <strong class="metric-value accent" id="auditTotalTokens">0</strong>
+          </div>
+          <div class="metric-item">
+            <span class="metric-label">总请求数</span>
+            <strong class="metric-value" id="auditTotalRequests">0</strong>
+          </div>
+          <div class="metric-item">
+            <span class="metric-label">总会话数</span>
+            <strong class="metric-value" id="auditTotalSessions">0</strong>
+          </div>
+        </div>
+
+        <div class="card">
+          <!-- 搜索和筛选栏 -->
+          <div style="display:flex; align-items:center; justify-content:space-between; gap:1rem; margin-bottom:1.5rem; flex-wrap:wrap;">
+            <div style="display:flex; align-items:center; gap:0.8rem; flex-wrap:wrap;">
+              <input type="text" id="auditSearchInput" placeholder="搜索 IP 地址..." style="background:rgba(46,168,122,0.025); border:1px solid var(--border); border-radius:9px; padding:0.5rem 0.9rem; color:var(--text); font-family:'DM Mono',monospace; font-size:0.78rem; outline:none; width:200px; transition:all 0.25s ease;">
+              <select id="auditSortSelect" style="background:rgba(46,168,122,0.025); border:1px solid var(--border); border-radius:9px; padding:0.5rem 0.9rem; color:var(--text); font-family:'DM Mono',monospace; font-size:0.78rem; outline:none; cursor:pointer;">
+                <option value="tokens">按消耗排序</option>
+                <option value="requests">按请求数排序</option>
+                <option value="sessions">按会话数排序</option>
+                <option value="recent">按最近活跃排序</option>
+              </select>
+            </div>
+            <div style="display:flex; align-items:center; gap:0.8rem;">
+              <span id="auditLastRefresh" style="font-family:'DM Mono',monospace; font-size:0.62rem; color:var(--text-dim);"></span>
+              <button class="primary-btn" id="auditRefreshButton" type="button" style="padding:0.5rem 1rem;">刷新</button>
+            </div>
+          </div>
+
+          <!-- IP 列表 -->
+          <div id="ipAuditList" class="audit-list">
+            <div class="empty-state">暂无记录</div>
+          </div>
+
+          <!-- 分页控件 -->
+          <div id="auditPagination" style="display:flex; align-items:center; justify-content:space-between; margin-top:1.5rem; padding-top:1rem; border-top:1px solid var(--border-light);">
+            <div style="display:flex; align-items:center; gap:0.8rem;">
+              <span style="font-family:'DM Mono',monospace; font-size:0.62rem; color:var(--text-dim);">每页显示</span>
+              <select id="auditPageSize" style="background:rgba(46,168,122,0.025); border:1px solid var(--border); border-radius:6px; padding:0.3rem 0.6rem; color:var(--text); font-family:'DM Mono',monospace; font-size:0.62rem; outline:none; cursor:pointer;">
+                <option value="10">10</option>
+                <option value="20" selected>20</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+              </select>
+              <span style="font-family:'DM Mono',monospace; font-size:0.62rem; color:var(--text-dim);">条</span>
+            </div>
+            <div style="display:flex; align-items:center; gap:0.5rem;">
+              <button class="audit-action-btn" id="auditPrevPage" type="button" disabled>上一页</button>
+              <span id="auditPageInfo" style="font-family:'DM Mono',monospace; font-size:0.62rem; color:var(--text-dim);">1 / 1</span>
+              <button class="audit-action-btn" id="auditNextPage" type="button" disabled>下一页</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- API Config Page -->
+      <div class="admin-page" id="page-api-config">
+        <div class="page-header">
+          <h1>API 配置</h1>
+          <p>配置对话和图片 API 的连接参数。</p>
+        </div>
+
+        <div class="card">
+          <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:1.5rem;">
+            <div class="api-modal-tabs" role="tablist" aria-label="API 配置类型">
+              <button class="api-modal-tab active" type="button" role="tab" aria-selected="true" aria-controls="chatApiPanel" data-api-panel="chat">对话 API</button>
+              <button class="api-modal-tab" type="button" role="tab" aria-selected="false" aria-controls="imageApiPanel" data-api-panel="image">图片 API</button>
+            </div>
+            <div style="display:flex; align-items:center; gap:0.8rem;">
+              <button class="primary-btn" type="submit" form="apiConfigForm">保存 API 配置</button>
+              <span id="apiSaveStatus" class="save-status">✓ 已保存</span>
+            </div>
+          </div>
+
+          <form id="apiConfigForm" class="config-form" style="margin-top:1.5rem;">
             <div class="api-config-panel active" id="chatApiPanel" role="tabpanel">
               <div class="form-section-title">对话 API</div>
               <label>
@@ -1392,6 +1643,14 @@
                 <button class="primary-btn" id="fetchModelsButton" type="button">自动获取模型</button>
                 <span id="fetchModelsStatus" class="save-status">模型列表已更新</span>
               </div>
+              <div class="form-section-title">连通测试</div>
+              <div class="span-full">
+                <div style="display:flex; align-items:center; gap:0.8rem; flex-wrap:wrap; margin-bottom:0.5rem;">
+                  <button class="primary-btn" id="testConnectionButton" type="button">测试对话 API</button>
+                  <span id="testConnectionStatus" class="save-status"></span>
+                </div>
+                <div id="testConnectionResult" style="font-size:0.75rem; color:var(--text-dim); min-height:1.2rem;"></div>
+              </div>
             </div>
             <div class="api-config-panel" id="imageApiPanel" role="tabpanel" hidden>
               <div class="form-section-title">图片 API</div>
@@ -1419,64 +1678,107 @@
                 <button class="primary-btn" id="fetchImageModelsButton" type="button">自动获取模型</button>
                 <span id="fetchImageModelsStatus" class="save-status">模型列表已更新</span>
               </div>
+              <div class="form-section-title">连通测试</div>
+              <div class="span-full">
+                <div style="display:flex; align-items:center; gap:0.8rem; flex-wrap:wrap; margin-bottom:0.5rem;">
+                  <button class="primary-btn" id="testImageConnectionButton" type="button">测试图片 API</button>
+                  <span id="testImageConnectionStatus" class="save-status"></span>
+                </div>
+                <div id="testImageConnectionResult" style="font-size:0.75rem; color:var(--text-dim); min-height:1.2rem;"></div>
+              </div>
             </div>
-            <div class="form-actions span-full">
-              <button class="primary-btn" type="submit">保存 API 配置</button>
-              <span id="apiSaveStatus" class="save-status">✓ 已保存</span>
-            </div>
-        </form>
+          </form>
+        </div>
       </div>
-    </div>
-  </div>
 
-  <!-- ═══════════ SITE CONFIG MODAL ═══════════ -->
-  <div class="modal-overlay" id="siteConfigModal">
-    <div class="modal-panel">
-      <div class="modal-header">
-        <h2>站点配置</h2>
-        <button class="modal-close" id="siteModalClose" type="button">&times;</button>
+      <!-- Site Config Page -->
+      <div class="admin-page" id="page-site-config">
+        <div class="page-header">
+          <h1>站点配置</h1>
+          <p>配置站点标题、头像、提示词等参数。</p>
+        </div>
+
+        <div class="card">
+          <form id="siteConfigForm" class="config-form">
+            <label>
+              <span>站点标题</span>
+              <input id="siteNameInput" name="siteName" type="text" placeholder="流萤">
+            </label>
+            <label>
+              <span>副标题</span>
+              <input id="siteSubtitleInput" name="siteSubtitle" type="text" placeholder="会找到的，属于我的梦……">
+            </label>
+            <label class="span-full">
+              <span>角色头像路径</span>
+              <input id="assistantAvatarPathInput" name="assistantAvatarPath" type="text" placeholder="E:\白嫖\流萤\firefly-chat\data\lingran.png">
+            </label>
+            <label class="span-full">
+              <span>用户头像路径</span>
+              <input id="userAvatarPathInput" name="userAvatarPath" type="text" placeholder="E:\白嫖\流萤\firefly-chat\data\lingran.png">
+            </label>
+            <label class="span-full">
+              <span>系统提示词</span>
+              <textarea id="systemPromptInput" name="systemPrompt" rows="10" placeholder="在此输入角色系统提示词……"></textarea>
+            </label>
+            <label class="span-full">
+              <span>修改管理密码</span>
+              <input id="adminPasswordInput" name="adminPassword" type="password" placeholder="留空则保持当前密码不变">
+            </label>
+            <label>
+              <span>缓存大小上限</span>
+              <input id="cacheMaxSizeInput" name="cacheMaxSize" type="number" min="0" max="10000" placeholder="500">
+            </label>
+            <label style="display:flex; align-items:center; gap:0.8rem;">
+              <button type="button" id="clearCacheBtn" class="primary-btn" style="padding:0.5rem 1rem; font-size:0.85rem;">清空缓存</button>
+              <span id="cacheInfo" style="font-size:0.8rem; color:var(--text-dim);">当前: <strong id="currentCacheSize">0</strong> / <strong id="currentCacheMax">500</strong></span>
+            </label>
+            <div class="form-actions">
+              <button class="primary-btn" type="submit">保存站点配置</button>
+              <span id="siteSaveStatus" class="save-status">✓ 已保存</span>
+            </div>
+          </form>
+        </div>
       </div>
-      <div class="modal-body">
-        <form id="siteConfigForm" class="config-form">
-          <label>
-            <span>站点标题</span>
-            <input id="siteNameInput" name="siteName" type="text" placeholder="流萤">
-          </label>
-          <label>
-            <span>副标题</span>
-            <input id="siteSubtitleInput" name="siteSubtitle" type="text" placeholder="会找到的，属于我的梦……">
-          </label>
-          <label class="span-full">
-            <span>角色头像路径</span>
-            <input id="assistantAvatarPathInput" name="assistantAvatarPath" type="text" placeholder="E:\白嫖\流萤\firefly-chat\data\lingran.png">
-          </label>
-          <label class="span-full">
-            <span>用户头像路径</span>
-            <input id="userAvatarPathInput" name="userAvatarPath" type="text" placeholder="E:\白嫖\流萤\firefly-chat\data\lingran.png">
-          </label>
-          <label class="span-full">
-            <span>系统提示词</span>
-            <textarea id="systemPromptInput" name="systemPrompt" rows="10" placeholder="在此输入角色系统提示词……"></textarea>
-          </label>
-          <label class="span-full">
-            <span>修改管理密码</span>
-            <input id="adminPasswordInput" name="adminPassword" type="password" placeholder="留空则保持当前密码不变">
-          </label>
-          <label>
-            <span>缓存大小上限</span>
-            <input id="cacheMaxSizeInput" name="cacheMaxSize" type="number" min="0" max="10000" placeholder="500">
-          </label>
-          <label style="display:flex; align-items:center; gap:0.8rem;">
-            <button type="button" id="clearCacheBtn" class="primary-btn" style="padding:0.5rem 1rem; font-size:0.85rem;">清空缓存</button>
-            <span id="cacheInfo" style="font-size:0.8rem; color:var(--text-dim);">当前: <strong id="currentCacheSize">0</strong> / <strong id="currentCacheMax">500</strong></span>
-          </label>
-          <div class="form-actions">
-            <button class="primary-btn" type="submit">保存站点配置</button>
-            <span id="siteSaveStatus" class="save-status">✓ 已保存</span>
+
+      <!-- Songs Page -->
+      <div class="admin-page" id="page-songs">
+        <div class="page-header">
+          <h1>歌曲曲库</h1>
+          <p>上传 AI 流萤翻唱。聊天里自然提到歌名时，流萤会把已上传的版本发出来。</p>
+        </div>
+
+        <div class="card">
+          <h2>上传歌曲</h2>
+          <form id="songUploadForm" class="song-upload-form">
+            <div class="song-upload-row">
+              <label class="song-input-group">
+                <span class="song-label">歌曲名称</span>
+                <input id="songTitleInput" name="songTitle" type="text" placeholder="请输入歌曲名" class="song-input">
+              </label>
+              <label class="song-input-group song-file-group">
+                <span class="song-label">音频文件</span>
+                <div class="song-file-wrap">
+                  <input id="songFileInput" name="songFile" type="file" accept="audio/*" class="song-file-input">
+                  <span class="song-file-text" id="songFileText">未选择文件</span>
+                  <span class="song-file-btn">选择文件</span>
+                </div>
+              </label>
+              <button class="primary-btn song-submit-btn" id="songUploadButton" type="submit">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                上传
+              </button>
+            </div>
+            <span id="songUploadStatus" class="save-status"></span>
+          </form>
+          <div class="song-divider"></div>
+          <div class="song-list-header">
+            <span class="song-list-title">已上传歌曲</span>
+            <span class="song-list-count" id="songCount">0 首</span>
           </div>
-        </form>
+          <div id="songList" class="song-list"></div>
+        </div>
       </div>
-    </div>
+    </main>
   </div>
 
   <script>
@@ -1488,21 +1790,6 @@
     const loginError = document.getElementById("loginError");
     const adminContent = document.getElementById("adminContent");
     const logoutButton = document.getElementById("logoutButton");
-
-    const apiModal = document.getElementById("apiConfigModal");
-    const siteModal = document.getElementById("siteConfigModal");
-    const openApiModal = () => apiModal.classList.add("open");
-    const closeApiModal = () => apiModal.classList.remove("open");
-    const openSiteModal = () => siteModal.classList.add("open");
-    const closeSiteModal = () => siteModal.classList.remove("open");
-
-    document.getElementById("apiConfigTrigger").addEventListener("click", openApiModal);
-    document.getElementById("siteConfigTrigger").addEventListener("click", openSiteModal);
-    document.getElementById("apiModalClose").addEventListener("click", closeApiModal);
-    document.getElementById("siteModalClose").addEventListener("click", closeSiteModal);
-    apiModal.addEventListener("click", e => { if (e.target === apiModal) closeApiModal(); });
-    siteModal.addEventListener("click", e => { if (e.target === siteModal) closeSiteModal(); });
-    document.addEventListener("keydown", e => { if (e.key === "Escape") { closeApiModal(); closeSiteModal(); } });
 
     function getStoredToken() {
       return localStorage.getItem(ADMIN_TOKEN_KEY) || "";
@@ -1571,7 +1858,8 @@
 
     async function showAdmin() {
       loginOverlay.classList.add("hidden");
-      adminContent.style.display = "block";
+      adminContent.style.display = "flex";
+      restoreLastPage();
       await initAdmin();
     }
 
@@ -1581,6 +1869,37 @@
     });
     logoutButton.addEventListener("click", logout);
 
+    // Page navigation
+    const ADMIN_PAGE_KEY = "firefly-admin-page";
+
+    function switchToPage(pageId) {
+      // Update active nav item
+      document.querySelectorAll('.nav-item').forEach(nav => nav.classList.remove('active'));
+      const navItem = document.querySelector(`.nav-item[data-page="${pageId}"]`);
+      if (navItem) navItem.classList.add('active');
+      
+      // Show target page
+      document.querySelectorAll('.admin-page').forEach(page => page.classList.remove('active'));
+      const targetPage = document.getElementById(`page-${pageId}`);
+      if (targetPage) {
+        targetPage.classList.add('active');
+        // Save to localStorage
+        localStorage.setItem(ADMIN_PAGE_KEY, pageId);
+      }
+    }
+
+    document.querySelectorAll('.nav-item[data-page]').forEach(item => {
+      item.addEventListener('click', () => {
+        switchToPage(item.getAttribute('data-page'));
+      });
+    });
+
+    function restoreLastPage() {
+      const lastPage = localStorage.getItem(ADMIN_PAGE_KEY);
+      if (lastPage) {
+        switchToPage(lastPage);
+      }
+    }
   </script>
   <script src="/admin.js"></script>
   <script>
