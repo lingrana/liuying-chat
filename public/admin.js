@@ -432,6 +432,7 @@ async function loadRecentConversations() {
           conversations.push({
             ip,
             title: conv.title || "新对话",
+            createdAt: conv.createdAt || 0,
             updatedAt: conv.updatedAt || 0,
             messageCount: conv.messageCount || 0,
             sessionId: session.sessionId || ""
@@ -455,7 +456,10 @@ async function loadRecentConversations() {
           <span style="font-size:0.72rem;color:var(--text);margin-left:0.5rem;">${escapeHtml(conv.title)}</span>
           <span style="font-size:0.62rem;color:var(--text-dim);margin-left:0.5rem;">${conv.messageCount} 条</span>
         </div>
-        <span style="font-family:'DM Mono',monospace;font-size:0.62rem;color:var(--text-dim);">${formatDateTime(conv.updatedAt)}</span>
+        <div style="text-align:right;">
+          <div style="font-family:'DM Mono',monospace;font-size:0.58rem;color:var(--text-dim);">开始: ${formatDateTime(conv.createdAt)}</div>
+          <div style="font-family:'DM Mono',monospace;font-size:0.58rem;color:var(--accent);">最后: ${formatDateTime(conv.updatedAt)}</div>
+        </div>
       </div>
     `).join("");
   } catch {
