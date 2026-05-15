@@ -388,7 +388,7 @@ async function loadStats() {
     return;
   }
   const data = await response.json();
-  
+
   // Update dashboard stats
   if (onlineCount) onlineCount.textContent = data.onlineCount || 0;
   if (totalVisits) totalVisits.textContent = data.totalVisits || 0;
@@ -396,7 +396,7 @@ async function loadStats() {
   if (data.cache) {
     const cacheHitRate = document.getElementById("cacheHitRate");
     const cacheSizeInfo = document.getElementById("cacheSizeInfo");
-    
+
     if (cacheHitRate) {
       cacheHitRate.textContent = data.cache.hitRate || '0%';
     }
@@ -405,6 +405,63 @@ async function loadStats() {
     }
     if (currentCacheSize) currentCacheSize.textContent = data.cache.size || 0;
     if (currentCacheMax) currentCacheMax.textContent = data.cache.maxSize || 500;
+  }
+}
+
+async function loadRecentConversations() {
+  const listEl = document.getElementById("recentConversationsList");
+  if (!listEl) return;
+
+  try {
+    const response = await fetch("/api/admin/conversations", {
+      cache: "no-store",
+      headers: authHeaders()
+    });
+    if (response.status === 401) {
+      window.location.reload();
+      return;
+    }
+    const data = await response.json();
+    const items = Array.isArray(data.items) ? data.items : [];
+
+    const conversations = [];
+    for (const item of items) {
+      const ip = item.ip || "unknown";
+      for (const session of (item.sessions || [])) {
+        for (const conv of (session.conversations || [])) {
+          conversations.push({
+            ip,
+            title: conv.title || "新对话",
+            updatedAt: conv.updatedAt || 0,
+            messageCount: conv.messageCount || 0,
+            sessionId: session.sessionId || ""
+          });
+        }
+      }
+    }
+
+    conversations.sort((a, b) => b.updatedAt - a.updatedAt);
+    const recent = conversations.slice(0, 10);
+
+    if (recent.length === 0) {
+      listEl.innerHTML = `<div class="empty-state">暂无对话记录</div>`;
+      return;
+    }
+
+    listEl.innerHTML = recent.map(conv => `
+      <div class="audit-token-row" style="padding:0.6rem 0;">
+        <div>
+          <span style="font-family:'DM Mono',monospace;font-size:0.72rem;color:var(--accent);">${escapeHtml(conv.ip)}</span>
+          <span style="font-size:0.72rem;color:var(--text);margin-left:0.5rem;">${escapeHtml(conv.title)}</span>
+          <span style="font-size:0.62rem;color:var(--text-dim);margin-left:0.5rem;">${conv.messageCount} 条</span>
+        </div>
+        <span style="font-family:'DM Mono',monospace;font-size:0.62rem;color:var(--text-dim);">${formatDateTime(conv.updatedAt)}</span>
+      </div>
+    `).join("");
+  } catch {
+    if (listEl) {
+      listEl.innerHTML = `<div class="empty-state">记录读取失败</div>`;
+    }
   }
 }
 
@@ -1126,7 +1183,7 @@ async function testImageConnection() {
 
 async function initAdmin() {
   if (adminInitialized) {
-    await Promise.all([loadStats(), loadConfig(), loadTokenStats(), loadIpAudit(), loadSongs()]);
+    await Promise.all([loadStats(), loadConfig(), loadTokenStats(), loadIpAudit(), loadSongs(), loadRecentConversations()]);
     return;
   }
   adminInitialized = true;
@@ -1229,8 +1286,8 @@ async function initAdmin() {
     });
   }
   
-  await Promise.all([loadStats(), loadConfig(), loadTokenStats(), loadIpAudit(), loadSongs()]);
-  statsTimer = setInterval(() => { loadStats(); loadTokenStats(); loadIpAudit(); }, 5000);
+  await Promise.all([loadStats(), loadConfig(), loadTokenStats(), loadIpAudit(), loadSongs(), loadRecentConversations()]);
+  statsTimer = setInterval(() => { loadStats(); loadTokenStats(); loadIpAudit(); loadRecentConversations(); }, 5000);
 }
 
 window.addEventListener("beforeunload", () => {
