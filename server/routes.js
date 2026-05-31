@@ -282,6 +282,7 @@ async function classifyUserIntent(semanticConfig, conversation, message) {
             "示例：用户说“生图逻辑有问题”“图片接口报错”“为什么不能发图”，真实意图是讨论或排查功能，只输出 chat。",
             "其他所有情况，包括普通聊天、解释、描述、问答、音乐、代码和设定讨论，只输出 chat。",
             "不要输出思考过程，不要先分析，直接输出最终分类词。",
+            "不要输出 <think>、推理、分析、JSON、Markdown 或任何说明文字。",
             retry ? "上一轮输出为空或格式不正确。现在不要思考过程，不要解释，只输出 chat 或 image。" : "",
             "只能输出两个结果之一：chat 或 image。不要输出 JSON、标点、解释或其他文字。"
           ].filter(Boolean).join("\n")
@@ -327,10 +328,10 @@ async function classifyUserIntent(semanticConfig, conversation, message) {
     };
   }
 
-  const first = await requestIntent(64, false);
+  const first = await requestIntent(256, false);
   if (first.decision) return first.decision;
 
-  const second = await requestIntent(128, true);
+  const second = await requestIntent(1024, true);
   if (second.decision) return second.decision;
 
   const preview = String(second.rawPreview || first.rawPreview || "").trim().slice(0, 120) || "空响应";
