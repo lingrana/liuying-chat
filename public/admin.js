@@ -164,6 +164,21 @@ function authHeaders(extra = {}) {
   };
 }
 
+async function readJsonResponse(response) {
+  const text = await response.text();
+  try {
+    return text ? JSON.parse(text) : {};
+  } catch {
+    const plainText = text
+      .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "")
+      .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, "")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    throw new Error(plainText || `HTTP ${response.status} 返回了非 JSON 响应`);
+  }
+}
+
 function formatFileSize(bytes) {
   const n = Number(bytes) || 0;
   if (n >= 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`;
@@ -1102,7 +1117,7 @@ async function fetchModels(target = "chat") {
       window.location.reload();
       return;
     }
-    const data = await response.json();
+    const data = await readJsonResponse(response);
     if (!response.ok) {
       status.textContent = data.error || "获取失败";
       status.style.color = "#d44";
@@ -1143,7 +1158,7 @@ async function testConnection() {
       window.location.reload();
       return;
     }
-    const data = await response.json();
+    const data = await readJsonResponse(response);
     if (data.ok) {
       status.textContent = "✓ 连通成功";
       status.classList.add("visible");
@@ -1185,7 +1200,7 @@ async function testImageConnection() {
       window.location.reload();
       return;
     }
-    const data = await response.json();
+    const data = await readJsonResponse(response);
     status.textContent = data.ok ? "✓ 图片连通成功" : "✗ 图片连通失败";
     status.classList.add("visible");
     result.textContent = data.message;
@@ -1220,7 +1235,7 @@ async function testSemanticConnection() {
       window.location.reload();
       return;
     }
-    const data = await response.json();
+    const data = await readJsonResponse(response);
     status.textContent = data.ok ? "✓ 语义理解连通成功" : "✗ 语义理解连通失败";
     status.classList.add("visible");
     result.textContent = data.message;
