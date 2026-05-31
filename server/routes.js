@@ -23,7 +23,7 @@ const IMAGE_JOB_RETRY_NOTICE_MS = 5 * 60 * 1000;
 const IMAGE_JOB_RETRY_STOP_MS = 15 * 60 * 1000;
 const IMAGE_JOB_RETRY_DELAY_MS = 15 * 1000;
 const IMAGE_JOB_BUSY_MESSAGE = "图片生成还在排队……我会继续等它完成。";
-const SEMANTIC_INTENT_TIMEOUT_MS = 4500;
+const SEMANTIC_INTENT_TIMEOUT_MS = 10 * 60 * 1000;
 
 function getImageLimitKey({ sessionId, userKey }) {
   if (userKey) return userKey;
