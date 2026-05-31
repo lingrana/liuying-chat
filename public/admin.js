@@ -53,6 +53,9 @@ const siteFields = {
   siteSubtitle: document.getElementById("siteSubtitleInput"),
   assistantAvatarPath: document.getElementById("assistantAvatarPathInput"),
   userAvatarPath: document.getElementById("userAvatarPathInput"),
+  announcementEnabled: document.getElementById("announcementEnabledInput"),
+  announcementTitle: document.getElementById("announcementTitleInput"),
+  announcementHtml: document.getElementById("announcementHtmlInput"),
   systemPrompt: document.getElementById("systemPromptInput"),
   adminPassword: document.getElementById("adminPasswordInput")
 };
@@ -987,11 +990,16 @@ async function loadConfig() {
   }
 
   for (const [key, input] of Object.entries(siteFields)) {
+    if (!input) continue;
     if (key === "adminPassword") {
       input.value = "";
       input.placeholder = config.adminPasswordSet
         ? "管理密码已设置，留空则保持不变"
         : "请设置管理密码";
+      continue;
+    }
+    if (input.type === "checkbox") {
+      input.checked = Boolean(config[key]);
       continue;
     }
     input.value = config[key] ?? "";
@@ -1061,7 +1069,9 @@ async function saveSiteConfig(event) {
   siteSaveStatus.style.color = "var(--accent)";
 
   const payload = Object.fromEntries(
-    Object.entries(siteFields).map(([key, input]) => [key, input.value])
+    Object.entries(siteFields)
+      .filter(([, input]) => Boolean(input))
+      .map(([key, input]) => [key, input.type === "checkbox" ? input.checked : input.value])
   );
 
   payload.cacheMaxSize = parseInt(cacheMaxSizeInput.value) || 500;

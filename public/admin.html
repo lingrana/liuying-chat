@@ -779,6 +779,28 @@
       line-height: 1.7;
     }
 
+    .config-form .toggle-label {
+      flex-direction: row;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      min-height: 45px;
+      padding: 0.68rem 0.9rem;
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      background: rgba(46,168,122,0.025);
+    }
+
+    .config-form .toggle-label input[type="checkbox"] {
+      width: 18px;
+      height: 18px;
+      padding: 0;
+      border-radius: 4px;
+      accent-color: var(--accent);
+      box-shadow: none;
+      flex: 0 0 auto;
+    }
+
     .span-full { grid-column: 1 / -1; }
 
     .api-config-panel {
@@ -1730,7 +1752,7 @@
       <div class="admin-page" id="page-site-config">
         <div class="page-header">
           <h1>站点配置</h1>
-          <p>配置站点标题、头像、提示词等参数。</p>
+          <p>配置站点标题、公告、头像、提示词等参数。</p>
         </div>
 
         <div class="card">
@@ -1742,6 +1764,22 @@
             <label>
               <span>副标题</span>
               <input id="siteSubtitleInput" name="siteSubtitle" type="text" placeholder="会找到的，属于我的梦……">
+            </label>
+            <label class="toggle-label span-full">
+              <span>启用公告弹窗</span>
+              <input id="announcementEnabledInput" name="announcementEnabled" type="checkbox">
+            </label>
+            <label>
+              <span>公告标题</span>
+              <input id="announcementTitleInput" name="announcementTitle" type="text" placeholder="公告">
+            </label>
+            <label>
+              <span>公告内容格式</span>
+              <input type="text" value="支持 HTML；会过滤脚本和危险属性" disabled>
+            </label>
+            <label class="span-full">
+              <span>公告内容 HTML</span>
+              <textarea id="announcementHtmlInput" name="announcementHtml" rows="8" placeholder="<p>这里填写公告内容，可以使用 HTML 标签。</p>"></textarea>
             </label>
             <label class="span-full">
               <span>角色头像路径</span>

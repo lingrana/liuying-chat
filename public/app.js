@@ -16,6 +16,8 @@ const sessionModeText = document.getElementById("sessionModeText");
 const conversationList = document.getElementById("conversationList");
 const openNoticeButton = document.getElementById("openNoticeButton");
 const noticeModal = document.getElementById("noticeModal");
+const noticeTitle = document.getElementById("noticeTitle");
+const noticeContent = document.getElementById("noticeContent");
 const noticeCloseButton = document.getElementById("noticeCloseButton");
 const panelStatus = document.getElementById("panelStatus");
 
@@ -31,7 +33,7 @@ const closeAvatarPanelButton = document.getElementById("closeAvatarPanelButton")
 const avatarStatus = document.getElementById("avatarStatus");
 
 const CONVERSATION_KEY = "firefly-chat-conversation-v2";
-const NOTICE_SEEN_KEY = "firefly-chat-notice-seen-v1";
+const NOTICE_SEEN_PREFIX = "firefly-chat-announcement-seen-v1:";
 
 let activeConversationId = localStorage.getItem(CONVERSATION_KEY) || "";
 let heartbeatTimer = null;
@@ -40,6 +42,7 @@ let userAvatarUrl = "/api/avatar/user";
 let conversations = [];
 let currentMessages = [];
 let modelName = "";
+let announcementConfig = { enabled: false, title: "公告", html: "", seenKey: "" };
 
 function setPanelStatus(text, isError = false) {
   if (!panelStatus) return;
@@ -73,12 +76,98 @@ function setAvatarStatus(text, isError = false) {
 
 function setNoticeModalOpen(open, remember = true) {
   if (!noticeModal) return;
+  if (open && !announcementConfig.html.trim()) {
+    renderAnnouncement({ enabled: true, title: "公告", html: "<p>暂无公告。</p>" });
+  }
   noticeModal.classList.toggle("open", open);
   if (open) {
     setSessionPanelOpen(false);
-  } else if (remember) {
-    localStorage.setItem(NOTICE_SEEN_KEY, "1");
+  } else if (remember && announcementConfig.seenKey) {
+    localStorage.setItem(announcementConfig.seenKey, "1");
   }
+}
+
+function hashText(text) {
+  let hash = 0;
+  for (let i = 0; i < text.length; i++) {
+    hash = ((hash << 5) - hash + text.charCodeAt(i)) | 0;
+  }
+  return Math.abs(hash).toString(36);
+}
+
+function isSafeAnnouncementUrl(name, value) {
+  const trimmed = String(value || "").trim();
+  if (!trimmed || trimmed.startsWith("#") || trimmed.startsWith("/")) return true;
+
+  try {
+    const url = new URL(trimmed, window.location.origin);
+    if (name === "src" && url.protocol === "data:") {
+      return /^data:image\/(?:png|jpe?g|gif|webp);base64,/i.test(trimmed);
+    }
+    return ["http:", "https:", "mailto:", "tel:"].includes(url.protocol);
+  } catch {
+    return false;
+  }
+}
+
+function sanitizeAnnouncementHtml(html) {
+  const template = document.createElement("template");
+  template.innerHTML = String(html || "");
+  const blockedTags = new Set([
+    "script", "style", "iframe", "object", "embed", "link", "meta", "base",
+    "form", "input", "button", "textarea", "select", "option"
+  ]);
+
+  for (const node of Array.from(template.content.querySelectorAll("*"))) {
+    const tagName = node.tagName.toLowerCase();
+    if (blockedTags.has(tagName)) {
+      node.remove();
+      continue;
+    }
+
+    for (const attr of Array.from(node.attributes)) {
+      const name = attr.name.toLowerCase();
+      const value = attr.value;
+      if (name.startsWith("on") || name === "srcdoc" || name === "style") {
+        node.removeAttribute(attr.name);
+        continue;
+      }
+      if (["href", "src", "xlink:href"].includes(name) && !isSafeAnnouncementUrl(name, value)) {
+        node.removeAttribute(attr.name);
+      }
+    }
+
+    if (tagName === "a") {
+      node.setAttribute("target", "_blank");
+      node.setAttribute("rel", "noopener noreferrer");
+    }
+  }
+
+  return template.innerHTML.trim();
+}
+
+function renderAnnouncement(announcement) {
+  const title = String(announcement?.title || "公告").trim() || "公告";
+  const html = sanitizeAnnouncementHtml(announcement?.html || "");
+  const enabled = Boolean(announcement?.enabled) && Boolean(html);
+  const seenKey = html ? `${NOTICE_SEEN_PREFIX}${hashText(`${title}\n${html}`)}` : "";
+  announcementConfig = { enabled, title, html, seenKey };
+
+  if (noticeTitle) {
+    noticeTitle.textContent = title;
+  }
+  if (noticeContent) {
+    noticeContent.innerHTML = html || "<p>暂无公告。</p>";
+  }
+  if (openNoticeButton) {
+    openNoticeButton.hidden = !enabled;
+  }
+}
+
+function shouldAutoShowAnnouncement() {
+  return announcementConfig.enabled &&
+    announcementConfig.seenKey &&
+    localStorage.getItem(announcementConfig.seenKey) !== "1";
 }
 
 function formatMessageTime(timestamp) {
@@ -481,6 +570,7 @@ async function fetchPublicConfig() {
   const config = await fetchJson("/api/config/public");
   siteName.textContent = config.siteName || "流萤";
   siteSubtitle.textContent = config.siteSubtitle || "会找到的，属于我的梦……";
+  renderAnnouncement(config.announcement || {});
   assistantAvatarUrl = config.assistantAvatarUrl || "/api/avatar/assistant";
   userAvatarUrl = config.userAvatarUrl || "/api/avatar/user";
   modelName = config.model || "";
@@ -793,7 +883,7 @@ async function init() {
   await loadSessionState();
   await sendHeartbeat();
   heartbeatTimer = setInterval(sendHeartbeat, 15000);
-  if (localStorage.getItem(NOTICE_SEEN_KEY) !== "1") {
+  if (shouldAutoShowAnnouncement()) {
     setNoticeModalOpen(true, false);
   }
   messageInput.focus();

@@ -403,6 +403,64 @@
       margin-bottom: 0.8rem;
     }
 
+    .announcement-content {
+      max-height: min(54vh, 420px);
+      overflow-y: auto;
+      margin: 0.85rem 0 1rem;
+      padding-right: 0.15rem;
+      color: var(--text-mid);
+      font-size: 0.76rem;
+      line-height: 1.75;
+      overflow-wrap: anywhere;
+    }
+
+    .announcement-content::-webkit-scrollbar { width: 3px; }
+    .announcement-content::-webkit-scrollbar-track { background: transparent; }
+    .announcement-content::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    .announcement-content :where(p, ul, ol, blockquote, pre, table) {
+      margin: 0 0 0.75rem;
+    }
+
+    .announcement-content :where(h1, h2, h3, h4) {
+      margin: 0.8rem 0 0.45rem;
+      color: var(--text);
+      line-height: 1.35;
+    }
+
+    .announcement-content :where(ul, ol) {
+      padding-left: 1.25rem;
+    }
+
+    .announcement-content a {
+      color: var(--accent-deep);
+      text-decoration: none;
+      border-bottom: 1px solid rgba(46,168,122,0.25);
+    }
+
+    .announcement-content img {
+      max-width: 100%;
+      height: auto;
+      border-radius: 10px;
+      border: 1px solid var(--border-light);
+    }
+
+    .announcement-content code,
+    .announcement-content pre {
+      font-family: 'DM Mono', monospace;
+      background: rgba(46,168,122,0.06);
+      border-radius: 8px;
+    }
+
+    .announcement-content code {
+      padding: 0.1rem 0.25rem;
+    }
+
+    .announcement-content pre {
+      padding: 0.7rem;
+      overflow-x: auto;
+    }
+
     .notice-list {
       display: flex;
       flex-direction: column;
@@ -1673,7 +1731,7 @@
           <div class="header-sub"><span class="header-dot" id="headerDot"></span><span id="headerSub">澪染制作 · 短信频道已接通</span></div>
         </div>
         <div class="header-right">
-          <button class="icon-btn" id="openNoticeButton" type="button" title="公告">
+          <button class="icon-btn" id="openNoticeButton" type="button" title="公告" hidden>
 <svg viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
           </button>
           <div class="link-dropdown" id="linkDropdown">
@@ -1805,38 +1863,8 @@
   <!-- 公告弹窗 -->
   <div class="password-modal-overlay" id="noticeModal">
     <div class="password-modal-card notice-modal-card">
-      <h3>站点说明</h3>
-      <p>右上角功能区使用说明</p>
-      <div class="notice-list">
-        <div class="notice-item">
-          <span class="notice-icon"><svg viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg></span>
-          <span><strong>公告</strong> · 再次查看此说明</span>
-        </div>
-        <a class="notice-item" href="https://github.com/lingrana/liuying-chat" target="_blank" rel="noopener" style="text-decoration:none;color:inherit;">
-          <span class="notice-icon"><svg viewBox="0 0 24 24"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg></span>
-          <span><strong>GitHub</strong> · 作者主页与源码</span>
-        </a>
-        <a class="notice-item" href="https://newapi.lingrana.top/" target="_blank" rel="noopener" style="text-decoration:none;color:inherit;">
-          <span class="notice-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg></span>
-          <span><strong>API</strong> · 模型服务管理</span>
-        </a>
-        <a class="notice-item" href="https://space.bilibili.com/2117391178" target="_blank" rel="noopener" style="text-decoration:none;color:inherit;">
-          <span class="notice-icon"><svg viewBox="0 0 24 24"><path d="M3 7h4l2-3h6l2 3h4v13H3z"/><path d="M8 12h8"/><circle cx="9" cy="15" r="1"/><circle cx="15" cy="15" r="1"/></svg></span>
-          <span><strong>Bilibili</strong> · 主页空间</span>
-        </a>
-        <a class="notice-item" href="https://v.douyin.com/AS6wHUmKqOU/" target="_blank" rel="noopener" style="text-decoration:none;color:inherit;">
-          <span class="notice-icon"><svg viewBox="0 0 24 24"><path d="M9 12a4 4 0 1 0 4 4V4a5 5 0 0 0 5 5"/></svg></span>
-          <span><strong>抖音</strong> · 关注账号</span>
-        </a>
-        <div class="notice-item">
-          <span class="notice-icon"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span>
-          <span><strong>会话</strong> · 管理对话、新建对话</span>
-        </div>
-        <div class="notice-item">
-          <span class="notice-icon"><svg viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>
-          <span><strong>头像</strong> · 修改你的用户头像</span>
-        </div>
-      </div>
+      <h3 id="noticeTitle">公告</h3>
+      <div class="announcement-content" id="noticeContent"></div>
       <button class="session-btn primary" id="noticeCloseButton" type="button" style="width:100%;min-height:38px;">我知道了</button>
     </div>
   </div>

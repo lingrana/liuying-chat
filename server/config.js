@@ -82,6 +82,11 @@ function normalizeConfig(config) {
   nextConfig.semanticAvailableModels = Array.isArray(nextConfig.semanticAvailableModels)
     ? nextConfig.semanticAvailableModels
     : [];
+  nextConfig.announcementEnabled = Boolean(nextConfig.announcementEnabled);
+  nextConfig.announcementTitle = typeof nextConfig.announcementTitle === "string" && nextConfig.announcementTitle.trim()
+    ? nextConfig.announcementTitle.trim()
+    : "公告";
+  nextConfig.announcementHtml = typeof nextConfig.announcementHtml === "string" ? nextConfig.announcementHtml : "";
   nextConfig.cacheMaxSize = Number(nextConfig.cacheMaxSize) || 500;
   return nextConfig;
 }

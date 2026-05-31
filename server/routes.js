@@ -357,6 +357,11 @@ function publicConfig(config) {
     model: chatConfig.model || "",
     assistantAvatarUrl: resolveAvatarUrl(config, "assistant"),
     userAvatarUrl: resolveAvatarUrl(config, "user"),
+    announcement: {
+      enabled: Boolean(config.announcementEnabled),
+      title: config.announcementTitle || "公告",
+      html: config.announcementHtml || ""
+    },
     connectionOk: apiConnectionStatus.ok,
     connectionMessage: apiConnectionStatus.message,
     connectionTestedAt: apiConnectionStatus.testedAt
@@ -1110,7 +1115,8 @@ async function handleAdminConfigPut(req, res) {
   ].some(hasField);
   const updatesSiteConfig = [
     "siteName", "siteSubtitle", "assistantAvatarPath",
-    "userAvatarPath", "systemPrompt", "adminPassword"
+    "userAvatarPath", "systemPrompt", "adminPassword",
+    "announcementEnabled", "announcementTitle", "announcementHtml"
   ].some(hasField);
   const manualModels = Array.isArray(body.chatAvailableModels)
     ? body.chatAvailableModels.filter((item) => typeof item === "string" && item.trim())
@@ -1150,7 +1156,10 @@ async function handleAdminConfigPut(req, res) {
     imageSize: hasField("imageSize") ? normalizeImageSize(body.imageSize) : normalizeImageSize(config.imageSize || "1024x1024"),
     temperature: hasField("temperature") ? Number(body.temperature) : config.temperature,
     maxTokens: hasField("maxTokens") ? Number(body.maxTokens) : config.maxTokens,
-    systemPrompt: hasField("systemPrompt") ? String(body.systemPrompt || "").trim() : config.systemPrompt
+    systemPrompt: hasField("systemPrompt") ? String(body.systemPrompt || "").trim() : config.systemPrompt,
+    announcementEnabled: hasField("announcementEnabled") ? Boolean(body.announcementEnabled) : Boolean(config.announcementEnabled),
+    announcementTitle: hasField("announcementTitle") ? String(body.announcementTitle || "").trim() || "公告" : config.announcementTitle || "公告",
+    announcementHtml: hasField("announcementHtml") ? String(body.announcementHtml || "") : config.announcementHtml || ""
   };
 
   if (hasField("chatApiKey") || hasField("apiKey")) {
