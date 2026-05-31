@@ -237,6 +237,7 @@ async function classifyUserIntent(semanticConfig, conversation, message) {
             "如果用户只是问你会不会画图、能不能生图、图片接口是否可用，只输出 chat。",
             "如果当前消息是对上一轮视觉创作请求的继续确认，例如“就按刚才的画出来”，并且最近对话里有可用于生成画面的内容，只输出 image。",
             "其他所有情况，包括普通聊天、解释、描述、问答、音乐、代码和设定讨论，只输出 chat。",
+            "不要输出思考过程，不要先分析，直接输出最终分类词。",
             retry ? "上一轮输出为空或格式不正确。现在不要思考过程，不要解释，只输出 chat 或 image。" : "",
             "只能输出两个结果之一：chat 或 image。不要输出 JSON、标点、解释或其他文字。"
           ].filter(Boolean).join("\n")
@@ -267,11 +268,14 @@ async function classifyUserIntent(semanticConfig, conversation, message) {
     }
 
     const reply = extractAssistantReply(payload);
+    const finishReason = payload?.choices?.[0]?.finish_reason || payload?.choices?.[0]?.finishReason || "";
     const rawPreview =
       reply ||
       (typeof payload?.raw === "string" ? payload.raw : "") ||
       (typeof payload?.message === "string" ? payload.message : "") ||
-      (typeof payload?.error?.message === "string" ? payload.error.message : "");
+      (typeof payload?.error?.message === "string" ? payload.error.message : "") ||
+      (finishReason ? `finish_reason=${finishReason}` : "") ||
+      JSON.stringify(payload).slice(0, 500);
     return {
       decision: parseIntentDecision(reply),
       reply,
@@ -279,10 +283,10 @@ async function classifyUserIntent(semanticConfig, conversation, message) {
     };
   }
 
-  const first = await requestIntent(64, false);
+  const first = await requestIntent(256, false);
   if (first.decision) return first.decision;
 
-  const second = await requestIntent(128, true);
+  const second = await requestIntent(512, true);
   if (second.decision) return second.decision;
 
   const preview = String(second.rawPreview || first.rawPreview || "").trim().slice(0, 120) || "空响应";
