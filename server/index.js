@@ -10,6 +10,7 @@ const { sendText, sendFile } = require("./utils");
 const {
   publicConfig,
   handleGeneratedImage,
+  handleImageJobStatus,
   handleAvatar,
   handleSongGet,
   handleCustomUserAvatar,
@@ -90,6 +91,11 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === "GET" && url.pathname.startsWith("/api/generated-image/")) {
       await handleGeneratedImage(req, res);
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname.startsWith("/api/image-job/")) {
+      await handleImageJobStatus(req, res);
       return;
     }
 

@@ -437,6 +437,46 @@ async function fetchJson(url, options = {}) {
   return data;
 }
 
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function pollImageJob(imageJobId) {
+  const startedAt = Date.now();
+  const maxWaitMs = 3 * 60 * 1000;
+
+  while (Date.now() - startedAt < maxWaitMs) {
+    await wait(2500);
+    const data = await fetchJson(`/api/image-job/${encodeURIComponent(imageJobId)}`);
+
+    if (data.userAvatarUrl) {
+      userAvatarUrl = data.userAvatarUrl;
+    }
+    if (Array.isArray(data.conversations)) {
+      conversations = data.conversations;
+      renderConversations();
+    }
+
+    if (data.status === "pending") {
+      continue;
+    }
+
+    if (data.status === "done" && data.imageUrl) {
+      appendMessage("assistant", data.reply || "我画好了……给你。", Date.now(), {
+        kind: "image",
+        imageUrl: data.imageUrl,
+        imagePrompt: data.imagePrompt
+      });
+      return;
+    }
+
+    appendMessage("assistant", data.reply || `图片没有顺利生成……${data.error || "生成失败"}`, Date.now());
+    return;
+  }
+
+  appendMessage("assistant", "图片生成还没有完成……可以稍后刷新对话看看。", Date.now());
+}
+
 async function fetchPublicConfig() {
   const config = await fetchJson("/api/config/public");
   siteName.textContent = config.siteName || "流萤";
@@ -564,6 +604,14 @@ async function sendMessage() {
         songUrl: data.songUrl,
         songTitle: data.songTitle,
         songArtist: data.songArtist
+      });
+    } else if (data.kind === "image_pending" && data.imageJobId) {
+      appendMessage("assistant", data.reply, Date.now(), {
+        kind: "image_pending",
+        imagePrompt: data.imagePrompt
+      });
+      pollImageJob(data.imageJobId).catch((error) => {
+        appendMessage("assistant", `图片生成状态没有顺利接通……${error.message}`, Date.now());
       });
     } else {
       appendMessage("assistant", data.reply, Date.now(), {

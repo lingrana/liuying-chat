@@ -17,6 +17,7 @@ const { getAdminConversationAudit, sanitizeAdminMessage, sanitizeAdminConversati
 
 let apiConnectionStatus = { ok: false, message: "未测试", testedAt: 0 };
 const imageGenerationLimits = new Map();
+const imageGenerationJobs = new Map();
 
 function getImageLimitKey({ sessionId, userKey }) {
   if (userKey) return userKey;
@@ -30,6 +31,21 @@ function getImageCooldownMs(limitKey) {
 
 function markImageGenerated(limitKey) {
   imageGenerationLimits.set(limitKey, Date.now());
+}
+
+function setImageJob(jobId, updates) {
+  const current = imageGenerationJobs.get(jobId) || {};
+  imageGenerationJobs.set(jobId, {
+    ...current,
+    ...updates,
+    updatedAt: Date.now()
+  });
+}
+
+function scheduleImageJobCleanup(jobId) {
+  setTimeout(() => {
+    imageGenerationJobs.delete(jobId);
+  }, 10 * 60 * 1000).unref();
 }
 
 function getConversationList(userStore) {
@@ -87,6 +103,102 @@ async function handleGeneratedImage(req, res) {
     return;
   }
   sendFile(res, filePath);
+}
+
+async function handleImageJobStatus(req, res) {
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  const jobId = decodeURIComponent(url.pathname.replace(/^\/api\/image-job\//, "")).trim();
+  if (!/^[a-zA-Z0-9-]+$/.test(jobId)) {
+    sendJson(res, 404, { error: "图片任务不存在。" });
+    return;
+  }
+
+  const job = imageGenerationJobs.get(jobId);
+  if (!job) {
+    sendJson(res, 404, { error: "图片任务不存在或已过期。" });
+    return;
+  }
+
+  sendJson(res, 200, {
+    id: jobId,
+    status: job.status || "pending",
+    reply: job.reply || "",
+    error: job.error || "",
+    imageUrl: job.imageUrl || "",
+    imagePrompt: job.imagePrompt || "",
+    model: job.model || "",
+    persistent: Boolean(job.persistent),
+    userAvatarUrl: job.userAvatarUrl || "",
+    conversationId: job.conversationId || "",
+    conversations: Array.isArray(job.conversations) ? job.conversations : []
+  });
+}
+
+async function runImageGenerationJob({
+  jobId,
+  imageConfig,
+  prompt,
+  imagePrompt,
+  conversation,
+  userStore,
+  save,
+  config,
+  clientIp,
+  persistent
+}) {
+  try {
+    const { apiResponse, payload } = await callImageApi(imageConfig, prompt);
+    if (!apiResponse.ok) {
+      throw new Error(summarizeApiError(payload, apiResponse.status));
+    }
+
+    const imageUrl = resolveGeneratedImageUrl(extractGeneratedImageData(payload));
+    if (!imageUrl) {
+      throw new Error("图片 API 没有返回可用图片。");
+    }
+
+    const usage = getUsageFromPayload(payload);
+    recordUsageEvent({ type: "image", ...usage, ip: clientIp });
+
+    const reply = "我画好了……给你。";
+    const now = Date.now();
+    appendConversationMessage(conversation, "assistant", reply, now, {
+      kind: "image",
+      imageUrl,
+      imagePrompt
+    });
+    userStore.updatedAt = now;
+    save();
+
+    setImageJob(jobId, {
+      status: "done",
+      reply,
+      imageUrl,
+      imagePrompt,
+      model: imageConfig.model,
+      persistent,
+      userAvatarUrl: resolveUserAvatarUrl(config, userStore),
+      conversationId: conversation.id,
+      conversations: getConversationList(userStore)
+    });
+  } catch (error) {
+    const reply = `图片没有顺利生成……${error.message}`;
+    const now = Date.now();
+    appendConversationMessage(conversation, "assistant", reply, now);
+    userStore.updatedAt = now;
+    save();
+
+    setImageJob(jobId, {
+      status: "error",
+      reply,
+      error: error.message || "图片生成失败。",
+      model: imageConfig.model,
+      persistent,
+      userAvatarUrl: resolveUserAvatarUrl(config, userStore),
+      conversationId: conversation.id,
+      conversations: getConversationList(userStore)
+    });
+  }
 }
 
 function parseIntentDecision(reply) {
@@ -436,53 +548,49 @@ async function handleChat(req, res) {
       return;
     }
 
-    const imagePrompt = promptResult.userPrompt;
-    let imageResult;
-    try {
-      imageResult = await callImageApi(imageConfig, promptResult.prompt);
-    } catch (error) {
-      sendJson(res, 502, { error: `无法连接图片 API：${error.message}` });
-      return;
-    }
-
-    const { apiResponse, payload } = imageResult;
-    if (!apiResponse.ok) {
-      const messageText = summarizeApiError(payload, apiResponse.status);
-      sendJson(res, apiResponse.status, { error: messageText, details: payload });
-      return;
-    }
-
-    let imageUrl = "";
-    try {
-      imageUrl = resolveGeneratedImageUrl(extractGeneratedImageData(payload));
-    } catch (error) {
-      sendJson(res, 502, { error: error.message, details: payload });
-      return;
-    }
-    if (!imageUrl) {
-      sendJson(res, 502, { error: "图片 API 没有返回可用图片。", details: payload });
-      return;
-    }
-
-    const usage = getUsageFromPayload(payload);
-    recordUsageEvent({ type: "image", ...usage, ip: clientIp });
     markImageGenerated(limitKey);
 
-    const reply = "我画好了……给你。";
+    const imagePrompt = promptResult.userPrompt;
+    const imageJobId = generateUUID();
+    const reply = "我开始画了……稍等一下。";
     const now = Date.now();
     appendConversationMessage(conversation, "user", message, now);
     appendConversationMessage(conversation, "assistant", reply, now + 1, {
-      kind: "image",
-      imageUrl,
+      kind: "image_pending",
+      imageJobId,
       imagePrompt
     });
     userStore.updatedAt = now + 1;
     save();
 
+    setImageJob(imageJobId, {
+      status: "pending",
+      reply,
+      imagePrompt,
+      model: imageConfig.model,
+      persistent,
+      userAvatarUrl: resolveUserAvatarUrl(config, userStore),
+      conversationId: conversation.id,
+      conversations: getConversationList(userStore)
+    });
+    scheduleImageJobCleanup(imageJobId);
+    runImageGenerationJob({
+      jobId: imageJobId,
+      imageConfig,
+      prompt: promptResult.prompt,
+      imagePrompt,
+      conversation,
+      userStore,
+      save,
+      config,
+      clientIp,
+      persistent
+    });
+
     sendJson(res, 200, {
       reply,
-      kind: "image",
-      imageUrl,
+      kind: "image_pending",
+      imageJobId,
       imagePrompt,
       model: imageConfig.model,
       persistent,
@@ -1371,6 +1479,7 @@ async function handleAdminMessageDelete(req, res) {
 module.exports = {
   publicConfig,
   handleGeneratedImage,
+  handleImageJobStatus,
   handleAvatar,
   handleSongGet,
   handleCustomUserAvatar,
