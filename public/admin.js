@@ -15,6 +15,9 @@ const availableModelsList = document.getElementById("availableModelsList");
 const fetchImageModelsButton = document.getElementById("fetchImageModelsButton");
 const fetchImageModelsStatus = document.getElementById("fetchImageModelsStatus");
 const imageAvailableModelsList = document.getElementById("imageAvailableModelsList");
+const fetchSemanticModelsButton = document.getElementById("fetchSemanticModelsButton");
+const fetchSemanticModelsStatus = document.getElementById("fetchSemanticModelsStatus");
+const semanticAvailableModelsList = document.getElementById("semanticAvailableModelsList");
 const songUploadForm = document.getElementById("songUploadForm");
 const songTitleInput = document.getElementById("songTitleInput");
 const songFileInput = document.getElementById("songFileInput");
@@ -24,7 +27,8 @@ const songFileText = document.getElementById("songFileText");
 const apiModalTabs = document.querySelectorAll("[data-api-panel]");
 const apiPanels = {
   chat: document.getElementById("chatApiPanel"),
-  image: document.getElementById("imageApiPanel")
+  image: document.getElementById("imageApiPanel"),
+  semantic: document.getElementById("semanticApiPanel")
 };
 const tokenRangeButtons = document.querySelectorAll("[data-token-range]");
 const ipAuditList = document.getElementById("ipAuditList");
@@ -39,7 +43,9 @@ const apiFields = {
   imageBaseUrl: document.getElementById("imageBaseUrlInput"),
   imageApiKey: document.getElementById("imageApiKeyInput"),
   imageModel: document.getElementById("imageModelInput"),
-  imageSize: document.getElementById("imageSizeInput")
+  semanticBaseUrl: document.getElementById("semanticBaseUrlInput"),
+  semanticApiKey: document.getElementById("semanticApiKeyInput"),
+  semanticModel: document.getElementById("semanticModelInput")
 };
 
 const siteFields = {
@@ -83,10 +89,11 @@ const expandedIps = new Set();
 
 function getModelUi(target = "chat") {
   const isImage = target === "image";
+  const isSemantic = target === "semantic";
   return {
-    listEl: isImage ? imageAvailableModelsList : availableModelsList,
-    modelInput: isImage ? apiFields.imageModel : apiFields.chatModel,
-    label: isImage ? "图片" : "对话"
+    listEl: isImage ? imageAvailableModelsList : isSemantic ? semanticAvailableModelsList : availableModelsList,
+    modelInput: isImage ? apiFields.imageModel : isSemantic ? apiFields.semanticModel : apiFields.chatModel,
+    label: isImage ? "图片" : isSemantic ? "语义理解" : "对话"
   };
 }
 
@@ -131,7 +138,7 @@ function renderAvailableModels(models, target = "chat") {
 }
 
 function switchApiPanel(target) {
-  const panel = target === "image" ? "image" : "chat";
+  const panel = target === "image" ? "image" : target === "semantic" ? "semantic" : "chat";
   apiModalTabs.forEach((button) => {
     const isActive = button.getAttribute("data-api-panel") === panel;
     button.classList.toggle("active", isActive);
@@ -951,9 +958,11 @@ async function loadConfig() {
   const config = await response.json();
 
   for (const [key, input] of Object.entries(apiFields)) {
-    if (key === "chatApiKey" || key === "imageApiKey") {
+    if (key === "chatApiKey" || key === "imageApiKey" || key === "semanticApiKey") {
       input.value = "";
-      const configured = key === "chatApiKey" ? config.chatApiKeyConfigured : config.imageApiKeyConfigured;
+      const configured = key === "chatApiKey"
+        ? config.chatApiKeyConfigured
+        : key === "semanticApiKey" ? config.semanticApiKeyConfigured : config.imageApiKeyConfigured;
       input.placeholder = configured
         ? "API Key 已保存，留空则保持不变"
         : "可留空";
@@ -977,8 +986,10 @@ async function loadConfig() {
 
   const chatModels = Array.isArray(config.chatAvailableModels) ? config.chatAvailableModels : Array.isArray(config.availableModels) ? config.availableModels : [];
   const imageModels = Array.isArray(config.imageAvailableModels) ? config.imageAvailableModels : [];
+  const semanticModels = Array.isArray(config.semanticAvailableModels) ? config.semanticAvailableModels : [];
   renderAvailableModels(chatModels, "chat");
   renderAvailableModels(imageModels, "image");
+  renderAvailableModels(semanticModels, "semantic");
   apiSaveStatus.textContent = "";
   siteSaveStatus.textContent = "";
 }
@@ -1000,6 +1011,10 @@ async function saveApiConfig(event) {
   const imageModelPills = imageAvailableModelsList?.querySelectorAll("[data-model]");
   if (imageModelPills && imageModelPills.length > 0) {
     payload.imageAvailableModels = Array.from(imageModelPills).map(b => b.getAttribute("data-model")).filter(Boolean);
+  }
+  const semanticModelPills = semanticAvailableModelsList?.querySelectorAll("[data-model]");
+  if (semanticModelPills && semanticModelPills.length > 0) {
+    payload.semanticAvailableModels = Array.from(semanticModelPills).map(b => b.getAttribute("data-model")).filter(Boolean);
   }
 
   const response = await fetch("/api/admin/config", {
@@ -1060,11 +1075,12 @@ async function saveSiteConfig(event) {
 
 async function fetchModels(target = "chat") {
   const isImage = target === "image";
-  const button = isImage ? fetchImageModelsButton : fetchModelsButton;
-  const status = isImage ? fetchImageModelsStatus : fetchModelsStatus;
-  const baseUrlInput = isImage ? apiFields.imageBaseUrl : apiFields.chatBaseUrl;
-  const apiKeyInput = isImage ? apiFields.imageApiKey : apiFields.chatApiKey;
-  const modelInput = isImage ? apiFields.imageModel : apiFields.chatModel;
+  const isSemantic = target === "semantic";
+  const button = isImage ? fetchImageModelsButton : isSemantic ? fetchSemanticModelsButton : fetchModelsButton;
+  const status = isImage ? fetchImageModelsStatus : isSemantic ? fetchSemanticModelsStatus : fetchModelsStatus;
+  const baseUrlInput = isImage ? apiFields.imageBaseUrl : isSemantic ? apiFields.semanticBaseUrl : apiFields.chatBaseUrl;
+  const apiKeyInput = isImage ? apiFields.imageApiKey : isSemantic ? apiFields.semanticApiKey : apiFields.chatApiKey;
+  const modelInput = isImage ? apiFields.imageModel : isSemantic ? apiFields.semanticModel : apiFields.chatModel;
 
   status.textContent = "获取中…";
   status.style.opacity = "1";
@@ -1185,6 +1201,41 @@ async function testImageConnection() {
   }
 }
 
+async function testSemanticConnection() {
+  const btn = document.getElementById("testSemanticConnectionButton");
+  const status = document.getElementById("testSemanticConnectionStatus");
+  const result = document.getElementById("testSemanticConnectionResult");
+  btn.disabled = true;
+  btn.textContent = "测试中…";
+  status.textContent = "";
+  result.textContent = "正在向语义理解 API 发送测试请求…";
+  result.style.color = "var(--text-dim)";
+
+  try {
+    const response = await fetch("/api/admin/test-semantic-connection", {
+      method: "POST",
+      headers: authHeaders()
+    });
+    if (response.status === 401) {
+      window.location.reload();
+      return;
+    }
+    const data = await response.json();
+    status.textContent = data.ok ? "✓ 语义理解连通成功" : "✗ 语义理解连通失败";
+    status.classList.add("visible");
+    result.textContent = data.message;
+    result.style.color = data.ok ? "var(--accent)" : "#d44";
+  } catch (error) {
+    status.textContent = "✗ 请求失败";
+    status.classList.add("visible");
+    result.textContent = error.message;
+    result.style.color = "#d44";
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "测试语义理解 API";
+  }
+}
+
 async function initAdmin() {
   if (adminInitialized) {
     await Promise.all([loadStats(), loadConfig(), loadTokenStats(), loadIpAudit(), loadSongs(), loadRecentConversations()]);
@@ -1225,12 +1276,14 @@ async function initAdmin() {
 
   fetchModelsButton.addEventListener("click", () => fetchModels("chat"));
   fetchImageModelsButton.addEventListener("click", () => fetchModels("image"));
+  fetchSemanticModelsButton.addEventListener("click", () => fetchModels("semantic"));
   ipAuditList?.addEventListener("click", handleAuditAction);
   apiModalTabs.forEach((button) => {
     button.addEventListener("click", () => switchApiPanel(button.getAttribute("data-api-panel")));
   });
   document.getElementById("testConnectionButton").addEventListener("click", testConnection);
   document.getElementById("testImageConnectionButton").addEventListener("click", testImageConnection);
+  document.getElementById("testSemanticConnectionButton").addEventListener("click", testSemanticConnection);
   bindTokenRangeControls();
   
   // IP审计相关事件监听

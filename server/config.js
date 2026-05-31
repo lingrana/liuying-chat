@@ -1,5 +1,5 @@
 const fs = require("fs");
-const { CONFIG_PATH, DATA_DIR, USERS_DIR, SONGS_DIR, SONGS_INDEX_PATH, TOKEN_USAGE_PATH } = require("./constants");
+const { CONFIG_PATH, DATA_DIR, USERS_DIR, SONGS_DIR, GENERATED_IMAGES_DIR, SONGS_INDEX_PATH, TOKEN_USAGE_PATH } = require("./constants");
 const { encryptSecret, decryptSecret } = require("./crypto");
 
 function ensureDataFiles() {
@@ -14,6 +14,9 @@ function ensureDataFiles() {
   }
   if (!fs.existsSync(SONGS_DIR)) {
     fs.mkdirSync(SONGS_DIR, { recursive: true });
+  }
+  if (!fs.existsSync(GENERATED_IMAGES_DIR)) {
+    fs.mkdirSync(GENERATED_IMAGES_DIR, { recursive: true });
   }
   if (!fs.existsSync(SONGS_INDEX_PATH)) {
     fs.writeFileSync(SONGS_INDEX_PATH, "[]", "utf8");
@@ -57,13 +60,27 @@ function normalizeConfig(config) {
     nextConfig.imageApiKeyEncrypted = null;
   }
 
+  try {
+    nextConfig.semanticApiKey = nextConfig.semanticApiKeyEncrypted
+      ? decryptSecret(nextConfig.semanticApiKeyEncrypted)
+      : nextConfig.chatApiKey || nextConfig.apiKey || "";
+  } catch {
+    nextConfig.semanticApiKey = nextConfig.chatApiKey || nextConfig.apiKey || "";
+    nextConfig.semanticApiKeyEncrypted = null;
+  }
+
   nextConfig.chatBaseUrl = nextConfig.chatBaseUrl || nextConfig.baseUrl || "";
   nextConfig.chatModel = nextConfig.chatModel || nextConfig.model || "";
+  nextConfig.semanticBaseUrl = nextConfig.semanticBaseUrl || nextConfig.chatBaseUrl || nextConfig.baseUrl || "";
+  nextConfig.semanticModel = nextConfig.semanticModel || nextConfig.chatModel || nextConfig.model || "";
   nextConfig.chatAvailableModels = Array.isArray(nextConfig.chatAvailableModels)
     ? nextConfig.chatAvailableModels
     : Array.isArray(nextConfig.availableModels) ? nextConfig.availableModels : [];
   nextConfig.imageAvailableModels = Array.isArray(nextConfig.imageAvailableModels)
     ? nextConfig.imageAvailableModels
+    : [];
+  nextConfig.semanticAvailableModels = Array.isArray(nextConfig.semanticAvailableModels)
+    ? nextConfig.semanticAvailableModels
     : [];
   nextConfig.cacheMaxSize = Number(nextConfig.cacheMaxSize) || 500;
   return nextConfig;
@@ -86,6 +103,7 @@ function stripPlainSecrets(config) {
   delete storedConfig.apiKey;
   delete storedConfig.chatApiKey;
   delete storedConfig.imageApiKey;
+  delete storedConfig.semanticApiKey;
   return storedConfig;
 }
 
@@ -97,6 +115,8 @@ function sanitizeAdminConfig(config) {
     chatApiKeyEncrypted,
     imageApiKey,
     imageApiKeyEncrypted,
+    semanticApiKey,
+    semanticApiKeyEncrypted,
     adminPasswordHash,
     ...rest
   } = config;
@@ -105,6 +125,7 @@ function sanitizeAdminConfig(config) {
     apiKeyConfigured: Boolean(chatApiKey || apiKey),
     chatApiKeyConfigured: Boolean(chatApiKey || apiKey),
     imageApiKeyConfigured: Boolean(imageApiKey),
+    semanticApiKeyConfigured: Boolean(semanticApiKey || chatApiKey || apiKey),
     apiKey: "",
     chatApiKey: "",
     imageApiKey: "",

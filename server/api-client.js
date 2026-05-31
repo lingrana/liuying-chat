@@ -3,6 +3,19 @@ const { CACHE_TTL_MS } = require("./constants");
 const { getCachedResponse, setCachedResponse, incrementCacheHits, incrementCacheMisses } = require("./cache");
 const { summarizeApiError } = require("./utils");
 
+const IMAGE_API_TIMEOUT_MS = 120 * 1000;
+const IMAGE_PROMPT_MAX_LENGTH = 1800;
+const VALID_IMAGE_SIZES = new Set([
+  "auto",
+  "256x256",
+  "512x512",
+  "1024x1024",
+  "1024x1536",
+  "1536x1024",
+  "1024x1792",
+  "1792x1024"
+]);
+
 function getChatConfig(config) {
   return {
     baseUrl: config.chatBaseUrl || config.baseUrl || "",
@@ -19,8 +32,23 @@ function getImageConfig(config) {
     baseUrl: config.imageBaseUrl || "",
     model: config.imageModel || "",
     apiKey: config.imageApiKey || "",
-    size: config.imageSize || "1024x1024"
+    size: normalizeImageSize(config.imageSize || "1024x1024")
   };
+}
+
+function getSemanticConfig(config) {
+  return {
+    baseUrl: config.semanticBaseUrl || config.chatBaseUrl || config.baseUrl || "",
+    model: config.semanticModel || config.chatModel || config.model || "",
+    apiKey: config.semanticApiKey || config.chatApiKey || config.apiKey || "",
+    temperature: 0,
+    maxTokens: 180
+  };
+}
+
+function normalizeImageSize(size) {
+  const normalized = String(size || "").trim().toLowerCase();
+  return VALID_IMAGE_SIZES.has(normalized) ? normalized : "auto";
 }
 
 function buildChatUrl(baseUrl) {
@@ -35,9 +63,16 @@ function buildChatUrl(baseUrl) {
 }
 
 function buildImageUrl(baseUrl) {
-  const trimmed = baseUrl.replace(/\/+$/, "");
+  const trimmed = String(baseUrl || "").trim().replace(/\/+$/, "");
   if (/\/images\/generations$/i.test(trimmed)) {
     return trimmed;
+  }
+  const endpointSuffixes = ["/chat/completions", "/responses", "/completions", "/models"];
+  const lower = trimmed.toLowerCase();
+  const matchedSuffix = endpointSuffixes.find((suffix) => lower.endsWith(suffix));
+  if (matchedSuffix) {
+    const prefix = trimmed.slice(0, trimmed.length - matchedSuffix.length).replace(/\/+$/, "");
+    return `${prefix}/images/generations`;
   }
   return trimmed + "/images/generations";
 }
@@ -96,6 +131,8 @@ async function callModelApi(config, requestBody, useCache = true) {
 
 async function callImageApi(config, prompt) {
   const imageUrl = buildImageUrl(config.baseUrl);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), IMAGE_API_TIMEOUT_MS);
   const headers = {
     "Content-Type": "application/json"
   };
@@ -106,13 +143,24 @@ async function callImageApi(config, prompt) {
     model: config.model,
     prompt,
     n: 1,
-    size: config.size || "1024x1024"
+    size: normalizeImageSize(config.size || "1024x1024")
   };
-  const apiResponse = await fetch(imageUrl, {
-    method: "POST",
-    headers,
-    body: JSON.stringify(requestBody)
-  });
+  let apiResponse;
+  try {
+    apiResponse = await fetch(imageUrl, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(requestBody),
+      signal: controller.signal
+    });
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      throw new Error("图片 API 请求超时，请稍后再试。");
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
 
   const text = await apiResponse.text();
   let payload;
@@ -162,39 +210,184 @@ function getUsageFromPayload(payload) {
   return { promptTokens, completionTokens, totalTokens };
 }
 
-function shouldGenerateImage(message, config) {
-  const imageConfig = getImageConfig(config);
-  if (!imageConfig.baseUrl || !imageConfig.model) {
-    return false;
-  }
-  const text = String(message || "").trim();
-  if (!text) return false;
-  return /(画一张|画张|帮我画|生成(一张)?图|生成图片|生图|出图|做一张图|绘制|画个|画幅|image|draw|generate.*image)/i.test(text);
-}
-
 function getImagePrompt(message) {
-  return String(message || "")
-    .replace(/^(请|帮我|给我|麻烦)?(画一张|画张|画个|画幅|生成一张|生成|生成图片|生图|出图|绘制|做一张图)/i, "")
-    .replace(/[，,:：。.\s]+$/g, "")
-    .trim() || String(message || "").trim();
+  return buildImagePrompt(message).prompt || normalizePromptText(message);
 }
 
-function extractGeneratedImage(payload) {
-  const first = Array.isArray(payload?.data) ? payload.data[0] : payload?.image || payload?.result || payload;
+function buildImagePrompt(message, contextMessages = []) {
+  const normalized = normalizePromptText(message);
+  const userPrompt = normalized.replace(/[，,:：。.\s]+$/g, "").trim();
+  const imageSubject = stripImageCommand(userPrompt);
+  const vagueTerms = new Set([
+    "图",
+    "图片",
+    "图像",
+    "一张图",
+    "一张图片",
+    "画",
+    "画图",
+    "绘图",
+    "生图",
+    "出图",
+    "作图",
+    "生成图片",
+    "生成一张图",
+    "生成一张图片",
+    "画一张",
+    "画一幅",
+    "画一个",
+    "帮我画",
+    "帮我画图",
+    "image",
+    "picture",
+    "draw",
+    "draw it",
+    "generate image",
+    "generate an image",
+    "make an image",
+    "an image",
+    "a picture"
+  ]);
+
+  if (!userPrompt) {
+    return {
+      ok: false,
+      prompt: "",
+      userPrompt: "",
+      reply: "嗯……我想画得更接近你心里的样子。可以告诉我，画面里想出现什么吗？"
+    };
+  }
+
+  const promptCandidate = imageSubject || userPrompt;
+  const isVague = vagueTerms.has(userPrompt.toLowerCase())
+    || vagueTerms.has(promptCandidate.toLowerCase())
+    || isReferentialImagePrompt(promptCandidate);
+  const contextText = isVague ? buildImageContext(contextMessages) : "";
+
+  if (isVague && !contextText) {
+    return {
+      ok: false,
+      prompt: "",
+      userPrompt: "",
+      reply: "嗯……我想画得更接近你心里的样子。可以告诉我，画面里想出现什么吗？"
+    };
+  }
+
+  const rawPrompt = contextText
+    ? [
+        "Create an image from the latest user request and the relevant conversation context.",
+        `Latest request: ${userPrompt}`,
+        "Relevant context:",
+        contextText,
+        "Resolve pronouns such as this, that, it, above, or just now from the context. Do not render chat UI, captions, watermarks, or system text unless the user explicitly asked for them."
+      ].join("\n")
+    : promptCandidate;
+  const capped = rawPrompt.slice(0, IMAGE_PROMPT_MAX_LENGTH);
+  return {
+    ok: true,
+    prompt: enhanceImagePrompt(capped),
+    userPrompt: userPrompt.slice(0, IMAGE_PROMPT_MAX_LENGTH),
+    reply: ""
+  };
+}
+
+function normalizePromptText(value) {
+  return String(value || "")
+    .replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\ufeff\ufffd]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function stripImageCommand(prompt) {
+  let text = normalizePromptText(prompt);
+  text = text
+    .replace(/^(?:请|麻烦你|拜托|可以的话|能不能|可以|帮我|给我|为我|替我|我要|我想要|想要|来)\s*/i, "")
+    .replace(/^(?:draw|generate|create|make|paint|render)\s+(?:me\s+)?(?:an?\s+)?(?:image|picture|photo|illustration|drawing)?\s*(?:of\s+)?/i, "")
+    .replace(/^(?:画出|画一张|画一幅|画一个|画|绘制|绘图|生成一张|生成一个|生成|生图|出图|作图|制作一张|制作|做一张|做)\s*/i, "")
+    .replace(/^(?:图片|图像|照片|插画|壁纸|头像|表情包)\s*(?:是|为|：|:)?\s*/i, "")
+    .trim();
+
+  return text.replace(/^[，,:：。.\s]+|[，,:：。.\s]+$/g, "").trim();
+}
+
+function isReferentialImagePrompt(prompt) {
+  const text = normalizePromptText(prompt).toLowerCase();
+  if (!text) return true;
+  return /^(这个|那个|它|他|她|这张|这幅|这段|上面|前面|之前|刚才|刚刚|上一条|上一个|就这个|就那个|就这样|按这个|按那个|照这个|照那个|按刚才|照刚才|画出来|生成出来|this|that|it|the above|same as above|previous one)$/i.test(text);
+}
+
+function buildImageContext(messages) {
+  if (!Array.isArray(messages) || messages.length === 0) return "";
+  return messages
+    .slice(-6)
+    .map((item) => {
+      const role = item?.role === "assistant" ? "Assistant" : item?.role === "user" ? "User" : "";
+      const content = normalizePromptText(item?.content || "").slice(0, 360);
+      if (!role || !content) return "";
+      return `${role}: ${content}`;
+    })
+    .filter(Boolean)
+    .join("\n")
+    .slice(0, 1200);
+}
+
+function enhanceImagePrompt(prompt) {
+  if (!/(流萤|firefly|萨姆|sam|星穹|星铁|崩坏|hon kai|honkai|hsr|你|your|you)/i.test(prompt)) {
+    return prompt;
+  }
+  const fireflyCues = [
+    "Keep the user's requested scene primary.",
+    "If the request refers to 'you' or the current speaker, interpret the subject as Firefly.",
+    "If depicting Firefly from Honkai: Star Rail, use official-safe visual cues: silver hair, black hair ornament, blue-and-pink eyes, gentle restrained expression, gray-green dress with dark shawl, or SAM fire armor when explicitly requested.",
+    "Mood: quiet, sincere, resilient, with motifs of stars, dreams, fireflies, night wind, and a fragile but determined light.",
+    "Avoid unsupported future plot, private relationship escalation, system text, captions, watermarks, and out-of-character elements."
+  ].join(" ");
+  return `${prompt}\n\n${fireflyCues}`;
+}
+
+function getFirstImageCandidate(payload) {
+  if (Array.isArray(payload?.data) && payload.data.length > 0) return payload.data[0];
+  if (Array.isArray(payload?.images) && payload.images.length > 0) return payload.images[0];
+  if (Array.isArray(payload?.result) && payload.result.length > 0) return payload.result[0];
+  return payload?.image || payload?.result || payload?.output?.[0] || payload;
+}
+
+function extractGeneratedImageData(payload) {
+  const first = getFirstImageCandidate(payload);
   const imageUrl =
     (typeof first === "string" && first) ||
     first?.url ||
     first?.image_url ||
+    first?.imageUrl ||
+    first?.content?.[0]?.image_url ||
     payload?.url ||
     payload?.image_url ||
+    payload?.imageUrl ||
     "";
-  const b64 = first?.b64_json || first?.base64 || payload?.b64_json || payload?.base64 || "";
-  if (imageUrl) {
-    return imageUrl;
-  }
-  if (b64) {
-    return `data:image/png;base64,${b64}`;
-  }
+  const base64 =
+    first?.b64_json ||
+    first?.base64 ||
+    first?.image_base64 ||
+    first?.content?.[0]?.b64_json ||
+    payload?.b64_json ||
+    payload?.base64 ||
+    payload?.image_base64 ||
+    "";
+  const mimeType =
+    first?.mime_type ||
+    first?.mimeType ||
+    first?.content_type ||
+    payload?.mime_type ||
+    payload?.mimeType ||
+    "image/png";
+
+  return { url: imageUrl, base64, mimeType };
+}
+
+function extractGeneratedImage(payload) {
+  const image = extractGeneratedImageData(payload);
+  if (image.url) return image.url;
+  if (image.base64) return `data:${image.mimeType || "image/png"};base64,${image.base64}`;
   return "";
 }
 
@@ -288,15 +481,18 @@ async function fetchModelList(config) {
 module.exports = {
   getChatConfig,
   getImageConfig,
+  getSemanticConfig,
   buildChatUrl,
   buildImageUrl,
   callModelApi,
   callImageApi,
   extractAssistantReply,
   getUsageFromPayload,
-  shouldGenerateImage,
+  buildImagePrompt,
   getImagePrompt,
+  normalizeImageSize,
   extractGeneratedImage,
+  extractGeneratedImageData,
   buildModelsUrl,
   extractModelIds,
   fetchModelList

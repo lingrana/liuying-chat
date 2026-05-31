@@ -1604,7 +1604,7 @@
       <div class="admin-page" id="page-api-config">
         <div class="page-header">
           <h1>API 配置</h1>
-          <p>配置对话和图片 API 的连接参数。</p>
+          <p>配置对话、图片和语义理解 API 的连接参数。</p>
         </div>
 
         <div class="card">
@@ -1612,6 +1612,7 @@
             <div class="api-modal-tabs" role="tablist" aria-label="API 配置类型">
               <button class="api-modal-tab active" type="button" role="tab" aria-selected="true" aria-controls="chatApiPanel" data-api-panel="chat">对话 API</button>
               <button class="api-modal-tab" type="button" role="tab" aria-selected="false" aria-controls="imageApiPanel" data-api-panel="image">图片 API</button>
+              <button class="api-modal-tab" type="button" role="tab" aria-selected="false" aria-controls="semanticApiPanel" data-api-panel="semantic">语义理解 API</button>
             </div>
             <div style="display:flex; align-items:center; gap:0.8rem;">
               <button class="primary-btn" type="submit" form="apiConfigForm">保存 API 配置</button>
@@ -1673,10 +1674,6 @@
                 <span>图片模型</span>
                 <input id="imageModelInput" name="imageModel" type="text" placeholder="gpt-image-1">
               </label>
-              <label>
-                <span>图片尺寸</span>
-                <input id="imageSizeInput" name="imageSize" type="text" placeholder="1024x1024">
-              </label>
               <label class="span-full">
                 <span>可用模型</span>
                 <div id="imageAvailableModelsList" class="model-select-list" role="listbox" aria-label="图片可用模型列表"></div>
@@ -1692,6 +1689,37 @@
                   <span id="testImageConnectionStatus" class="save-status"></span>
                 </div>
                 <div id="testImageConnectionResult" style="font-size:0.75rem; color:var(--text-dim); min-height:1.2rem;"></div>
+              </div>
+            </div>
+            <div class="api-config-panel" id="semanticApiPanel" role="tabpanel" hidden>
+              <div class="form-section-title">语义理解 API</div>
+              <label>
+                <span>Semantic Base URL</span>
+                <input id="semanticBaseUrlInput" name="semanticBaseUrl" type="url" placeholder="https://api.openai.com/v1">
+              </label>
+              <label>
+                <span>Semantic API Key</span>
+                <input id="semanticApiKeyInput" name="semanticApiKey" type="password" placeholder="可留空；已保存时留空则保持不变">
+              </label>
+              <label>
+                <span>语义模型</span>
+                <input id="semanticModelInput" name="semanticModel" type="text" placeholder="gpt-4o-mini">
+              </label>
+              <label class="span-full">
+                <span>可用模型</span>
+                <div id="semanticAvailableModelsList" class="model-select-list" role="listbox" aria-label="语义理解可用模型列表"></div>
+              </label>
+              <div class="form-actions span-full" style="padding-top:0;">
+                <button class="primary-btn" id="fetchSemanticModelsButton" type="button">自动获取模型</button>
+                <span id="fetchSemanticModelsStatus" class="save-status">模型列表已更新</span>
+              </div>
+              <div class="form-section-title">连通测试</div>
+              <div class="span-full">
+                <div style="display:flex; align-items:center; gap:0.8rem; flex-wrap:wrap; margin-bottom:0.5rem;">
+                  <button class="primary-btn" id="testSemanticConnectionButton" type="button">测试语义理解 API</button>
+                  <span id="testSemanticConnectionStatus" class="save-status"></span>
+                </div>
+                <div id="testSemanticConnectionResult" style="font-size:0.75rem; color:var(--text-dim); min-height:1.2rem;"></div>
               </div>
             </div>
           </form>

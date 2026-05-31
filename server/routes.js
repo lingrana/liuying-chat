@@ -1,14 +1,16 @@
 const crypto = require("crypto");
+const fs = require("fs");
+const path = require("path");
 const { loadConfig, saveConfig, stripPlainSecrets, sanitizeAdminConfig } = require("./config");
 const { hashPassword, generateAdminToken, verifyAdminToken, generateUUID } = require("./crypto");
-const { ADMIN_TOKEN_TTL_MS } = require("./constants");
-const { parseBody, sendJson, sendText, sendFile, getClientIp, summarizeApiError } = require("./utils");
+const { ADMIN_TOKEN_TTL_MS, IMAGE_GENERATION_COOLDOWN_MS, GENERATED_IMAGES_DIR } = require("./constants");
+const { parseBody, sendJson, sendText, sendFile, getClientIp, summarizeApiError, inferExtensionFromMime } = require("./utils");
 const { cleanupExpiredPersistentUsers, getOrCreateUserStore, ensureConversation, createConversation, sanitizeConversation, appendConversationMessage, deriveConversationTitle, loadPersistentUserStore, savePersistentUserStore, deletePersistentUserStore, listPersistentUserStores, findPersistentUserStoreBySessionId, normalizeConversationMessage } = require("./users");
 const { loadSongs, saveSongs, sanitizeSong, getSongFilePath, findRequestedSong } = require("./songs");
 const { getVisitorSnapshot, recordVisitor } = require("./visitors");
 const { recordTokenUsage, recordUsageEvent, getTokenStats, getTokenUsageEvents, setTokenUsageEvents, normalizeTokenUsageEvent, saveTokenUsageEvents } = require("./token-usage");
 const { clearCache, getCacheStats, setCacheMaxSize } = require("./cache");
-const { getChatConfig, getImageConfig, callModelApi, callImageApi, extractAssistantReply, getUsageFromPayload, shouldGenerateImage, getImagePrompt, extractGeneratedImage, fetchModelList } = require("./api-client");
+const { getChatConfig, getImageConfig, getSemanticConfig, callModelApi, callImageApi, extractAssistantReply, getUsageFromPayload, buildImagePrompt, extractGeneratedImageData, fetchModelList, normalizeImageSize } = require("./api-client");
 const { buildChatMessages } = require("./prompts");
 const { getAvatarPath, resolveAvatarUrl, resolveUserAvatarUrl, getCustomUserAvatarPath, saveUserAvatarFromDataUrl } = require("./avatars");
 const { getAdminConversationAudit, sanitizeAdminMessage, sanitizeAdminConversation, resolveAdminUserStore, findConversationForAdmin, findMessageForAdmin } = require("./admin-audit");
@@ -23,11 +25,125 @@ function getImageLimitKey({ sessionId, userKey }) {
 
 function getImageCooldownMs(limitKey) {
   const lastAt = imageGenerationLimits.get(limitKey) || 0;
-  return Math.max(0, 5 * 60 * 1000 - (Date.now() - lastAt));
+  return Math.max(0, IMAGE_GENERATION_COOLDOWN_MS - (Date.now() - lastAt));
 }
 
 function markImageGenerated(limitKey) {
   imageGenerationLimits.set(limitKey, Date.now());
+}
+
+function getConversationList(userStore) {
+  return userStore.conversations
+    .slice()
+    .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
+    .map(sanitizeConversation);
+}
+
+function resolveGeneratedImageUrl(imageData) {
+  if (imageData?.url) return imageData.url;
+  if (!imageData?.base64) return "";
+
+  let base64 = String(imageData.base64 || "");
+  let mimeType = imageData.mimeType || "image/png";
+  const dataUrlMatch = base64.match(/^data:([^;]+);base64,(.+)$/i);
+  if (dataUrlMatch) {
+    mimeType = dataUrlMatch[1];
+    base64 = dataUrlMatch[2];
+  }
+
+  const cleanBase64 = base64.replace(/\s/g, "");
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(cleanBase64)) {
+    throw new Error("图片 API 返回了无法识别的 base64 图片。");
+  }
+
+  const buffer = Buffer.from(cleanBase64, "base64");
+  if (buffer.length === 0) {
+    throw new Error("图片 API 返回了空图片。");
+  }
+  if (buffer.length > 20 * 1024 * 1024) {
+    throw new Error("图片 API 返回的图片过大。");
+  }
+
+  fs.mkdirSync(GENERATED_IMAGES_DIR, { recursive: true });
+  const extension = inferExtensionFromMime(mimeType);
+  const fileName = `${Date.now()}-${generateUUID()}${extension}`;
+  const filePath = path.join(GENERATED_IMAGES_DIR, fileName);
+  fs.writeFileSync(filePath, buffer);
+  return `/api/generated-image/${encodeURIComponent(fileName)}`;
+}
+
+async function handleGeneratedImage(req, res) {
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  const fileName = decodeURIComponent(url.pathname.replace(/^\/api\/generated-image\//, "")).trim();
+  if (!/^[a-zA-Z0-9_.-]+$/.test(fileName)) {
+    sendText(res, 404, "Not Found");
+    return;
+  }
+
+  const root = path.resolve(GENERATED_IMAGES_DIR);
+  const filePath = path.resolve(root, fileName);
+  if (!filePath.startsWith(root + path.sep)) {
+    sendText(res, 403, "Forbidden");
+    return;
+  }
+  sendFile(res, filePath);
+}
+
+function parseIntentDecision(reply) {
+  const text = String(reply || "").trim().toLowerCase();
+  const compact = text.replace(/[`"'“”‘’。，,.!！?？:：;；\s_-]+/g, "");
+  if (["image", "imageapi", "图片api", "图像api", "调用图片api", "图片", "图像", "照片", "画图", "绘图", "生图"].includes(compact)) {
+    return { intent: "image" };
+  }
+  if (["chat", "chatapi", "对话api", "调用对话api", "聊天", "对话", "文字", "普通聊天"].includes(compact)) {
+    return { intent: "chat" };
+  }
+  return { intent: "chat" };
+}
+
+async function classifyUserIntent(semanticConfig, conversation, message) {
+  const recentMessages = (conversation.messages || [])
+    .slice(-8)
+    .map((item) => `${item.role}: ${String(item.content || "").slice(0, 300)}`)
+    .join("\n");
+  const requestBody = {
+    model: semanticConfig.model,
+    temperature: 0,
+    max_tokens: 8,
+    stream: false,
+    messages: [
+      {
+        role: "system",
+        content: [
+          "你是内部意图分类器，只输出一个英文单词，不要输出解释。",
+          "你的任务不是回答用户能不能做，而是选择哪个下游 API 最适合满足用户真实意图。",
+          "基于当前用户消息和最近对话语义，判断下一步只应该调用哪个 API。",
+          "如果满足用户请求需要生成或发送一张视觉图片、照片、画像、插画或视觉结果，只输出 image。",
+          "如果用户是在询问、讨论、排查、抱怨或配置生图/图片功能，而不是要立即生成一张图，只输出 chat。",
+          "如果用户只是问你会不会画图、能不能生图、图片接口是否可用，只输出 chat。",
+          "如果当前消息是对上一轮视觉创作请求的继续确认，例如“就按刚才的画出来”，并且最近对话里有可用于生成画面的内容，只输出 image。",
+          "其他所有情况，包括普通聊天、解释、描述、问答、音乐、代码和设定讨论，只输出 chat。",
+          "只能输出两个结果之一：chat 或 image。不要输出 JSON、标点、解释或其他文字。"
+        ].join("\n")
+      },
+      {
+        role: "user",
+        content: [
+          "最近对话：",
+          recentMessages || "（无）",
+          "",
+          "当前用户消息：",
+          message
+        ].join("\n")
+      }
+    ]
+  };
+
+  const { apiResponse, payload } = await callModelApi(semanticConfig, requestBody, false);
+  if (!apiResponse.ok) {
+    return { intent: "chat" };
+  }
+  return parseIntentDecision(extractAssistantReply(payload));
 }
 
 function requireAdminAuth(req, res) {
@@ -115,6 +231,7 @@ async function handleChat(req, res) {
   const body = await parseBody(req);
   const config = loadConfig();
   const chatConfig = getChatConfig(config);
+  const semanticConfig = getSemanticConfig(config);
   const message = typeof body.message === "string" ? body.message.trim() : "";
   const conversationId = typeof body.conversationId === "string" ? body.conversationId.trim() : "";
   const clientIp = getClientIp(req);
@@ -124,20 +241,28 @@ async function handleChat(req, res) {
     return;
   }
 
-  if (!chatConfig.baseUrl || !chatConfig.model) {
-    sendJson(res, 400, { error: "API 尚未配置完成，请先去后台填写 Base URL 和模型名称。" });
+  if (!semanticConfig.baseUrl || !semanticConfig.model) {
+    sendJson(res, 400, { error: "语义理解 API 尚未配置完成，请先去后台填写 Base URL 和模型名称。" });
     return;
   }
 
   cleanupExpiredPersistentUsers();
-  const { key: userKey, userStore, persistent, save } = getOrCreateUserStore({ ip: clientIp });
+  const { key: userKey, sessionId, userStore, persistent, save } = getOrCreateUserStore({ ip: clientIp });
   let conversation = ensureConversation(userStore, conversationId);
 
   if (!conversationId || !userStore.conversations.some((item) => item.id === conversationId)) {
     conversation = userStore.conversations[0];
   }
 
-  const requestedSong = findRequestedSong(message);
+  const imageDecision = await classifyUserIntent(semanticConfig, conversation, message);
+  const imageRequested = imageDecision.intent === "image";
+
+  if (!imageRequested && (!chatConfig.baseUrl || !chatConfig.model)) {
+    sendJson(res, 400, { error: "API 尚未配置完成，请先去后台填写 Base URL 和模型名称。" });
+    return;
+  }
+
+  const requestedSong = imageRequested ? null : findRequestedSong(message);
   if (requestedSong) {
     const song = sanitizeSong(requestedSong);
     const songUrl = `/api/song/${encodeURIComponent(song.id)}`;
@@ -211,9 +336,48 @@ async function handleChat(req, res) {
     return;
   }
 
-  if (shouldGenerateImage(message, config)) {
+  if (imageRequested) {
     const imageConfig = getImageConfig(config);
-    const limitKey = getImageLimitKey({ userKey });
+    if (!imageConfig.baseUrl || !imageConfig.model) {
+      const reply = "嗯……我知道你想要一张图片。不过这边还没有接上图片接口。等后台把图片 API 的 Base URL 和模型名称配置好，我就能试着画给你。";
+      const now = Date.now();
+      appendConversationMessage(conversation, "user", message, now);
+      appendConversationMessage(conversation, "assistant", reply, now + 1);
+      userStore.updatedAt = now + 1;
+      save();
+      sendJson(res, 200, {
+        reply,
+        model: imageConfig.model,
+        kind: "text",
+        persistent,
+        userAvatarUrl: resolveUserAvatarUrl(config, userStore),
+        conversationId: conversation.id,
+        conversations: getConversationList(userStore)
+      });
+      return;
+    }
+
+    const promptResult = buildImagePrompt(message, conversation.messages || []);
+    if (!promptResult.ok) {
+      const reply = promptResult.reply || "嗯……这张图还缺一点内容。可以告诉我，你想画什么吗？";
+      const now = Date.now();
+      appendConversationMessage(conversation, "user", message, now);
+      appendConversationMessage(conversation, "assistant", reply, now + 1);
+      userStore.updatedAt = now + 1;
+      save();
+      sendJson(res, 200, {
+        reply,
+        model: imageConfig.model,
+        kind: "text",
+        persistent,
+        userAvatarUrl: resolveUserAvatarUrl(config, userStore),
+        conversationId: conversation.id,
+        conversations: getConversationList(userStore)
+      });
+      return;
+    }
+
+    const limitKey = getImageLimitKey({ sessionId, userKey });
     const cooldownMs = getImageCooldownMs(limitKey);
     if (cooldownMs > 0) {
       const waitMinutes = Math.ceil(cooldownMs / 60000);
@@ -230,18 +394,15 @@ async function handleChat(req, res) {
         persistent,
         userAvatarUrl: resolveUserAvatarUrl(config, userStore),
         conversationId: conversation.id,
-        conversations: userStore.conversations
-          .slice()
-          .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
-          .map(sanitizeConversation)
+        conversations: getConversationList(userStore)
       });
       return;
     }
 
-    const imagePrompt = getImagePrompt(message);
+    const imagePrompt = promptResult.userPrompt;
     let imageResult;
     try {
-      imageResult = await callImageApi(imageConfig, imagePrompt);
+      imageResult = await callImageApi(imageConfig, promptResult.prompt);
     } catch (error) {
       sendJson(res, 502, { error: `无法连接图片 API：${error.message}` });
       return;
@@ -254,7 +415,13 @@ async function handleChat(req, res) {
       return;
     }
 
-    const imageUrl = extractGeneratedImage(payload);
+    let imageUrl = "";
+    try {
+      imageUrl = resolveGeneratedImageUrl(extractGeneratedImageData(payload));
+    } catch (error) {
+      sendJson(res, 502, { error: error.message, details: payload });
+      return;
+    }
     if (!imageUrl) {
       sendJson(res, 502, { error: "图片 API 没有返回可用图片。", details: payload });
       return;
@@ -284,10 +451,7 @@ async function handleChat(req, res) {
       persistent,
       userAvatarUrl: resolveUserAvatarUrl(config, userStore),
       conversationId: conversation.id,
-      conversations: userStore.conversations
-        .slice()
-        .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
-        .map(sanitizeConversation)
+      conversations: getConversationList(userStore)
     });
     return;
   }
@@ -589,9 +753,10 @@ async function handleAdminModelsFetch(req, res) {
   const config = loadConfig();
   const chatConfig = getChatConfig(config);
   const imageConfig = getImageConfig(config);
+  const semanticConfig = getSemanticConfig(config);
   const body = await parseBody(req);
-  const target = body.target === "image" ? "image" : "chat";
-  const sourceConfig = target === "image" ? imageConfig : chatConfig;
+  const target = body.target === "image" ? "image" : body.target === "semantic" ? "semantic" : "chat";
+  const sourceConfig = target === "image" ? imageConfig : target === "semantic" ? semanticConfig : chatConfig;
   const fetchConfig = {
     ...sourceConfig,
     baseUrl: typeof body.baseUrl === "string" && body.baseUrl.trim()
@@ -608,6 +773,9 @@ async function handleAdminModelsFetch(req, res) {
     if (target === "image") {
       config.imageAvailableModels = models;
       config.imageModelsFetchedAt = fetchedAt;
+    } else if (target === "semantic") {
+      config.semanticAvailableModels = models;
+      config.semanticModelsFetchedAt = fetchedAt;
     } else {
       config.chatAvailableModels = models;
       config.availableModels = models;
@@ -684,7 +852,13 @@ async function handleAdminTestImageConnection(req, res) {
       return;
     }
 
-    const generatedImage = extractGeneratedImage(payload);
+    let generatedImage = "";
+    try {
+      generatedImage = resolveGeneratedImageUrl(extractGeneratedImageData(payload));
+    } catch (error) {
+      sendJson(res, 200, { ok: false, message: error.message });
+      return;
+    }
     if (!generatedImage) {
       sendJson(res, 200, { ok: false, message: "图片 API 已连接但没有返回可用图片。" });
       return;
@@ -698,6 +872,31 @@ async function handleAdminTestImageConnection(req, res) {
   }
 }
 
+async function handleAdminTestSemanticConnection(req, res) {
+  if (!requireAdminAuth(req, res)) return;
+  const semanticConfig = getSemanticConfig(loadConfig());
+
+  if (!semanticConfig.baseUrl || !semanticConfig.model) {
+    sendJson(res, 200, { ok: false, message: "语义理解 API 未配置。" });
+    return;
+  }
+
+  try {
+    const decision = await classifyUserIntent(semanticConfig, { messages: [] }, "用户现在想和你正常聊一会儿。");
+    if (decision.intent !== "chat" && decision.intent !== "image") {
+      sendJson(res, 200, { ok: false, message: "语义理解 API 已响应，但返回格式不可识别。" });
+      return;
+    }
+    sendJson(res, 200, {
+      ok: true,
+      message: `语义理解 API 连通成功 · 模型 ${semanticConfig.model} 已返回调用目标`,
+      decision
+    });
+  } catch (error) {
+    sendJson(res, 200, { ok: false, message: `语义理解 API 连接失败: ${error.message}` });
+  }
+}
+
 async function handleAdminConfigPut(req, res) {
   if (!requireAdminAuth(req, res)) return;
   const body = await parseBody(req);
@@ -706,8 +905,9 @@ async function handleAdminConfigPut(req, res) {
   const updatesApiConfig = [
     "chatBaseUrl", "chatApiKey", "chatModel", "chatAvailableModels",
     "baseUrl", "apiKey", "model", "availableModels", "availableModelsText",
-    "imageBaseUrl", "imageApiKey", "imageModel", "imageAvailableModels",
-    "imageSize", "temperature", "maxTokens"
+    "imageBaseUrl", "imageApiKey", "imageModel", "imageAvailableModels", "imageSize",
+    "semanticBaseUrl", "semanticApiKey", "semanticModel", "semanticAvailableModels",
+    "temperature", "maxTokens"
   ].some(hasField);
   const updatesSiteConfig = [
     "siteName", "siteSubtitle", "assistantAvatarPath",
@@ -726,6 +926,9 @@ async function handleAdminConfigPut(req, res) {
   const imageManualModels = Array.isArray(body.imageAvailableModels)
     ? body.imageAvailableModels.filter((item) => typeof item === "string" && item.trim())
     : Array.isArray(config.imageAvailableModels) ? config.imageAvailableModels : [];
+  const semanticManualModels = Array.isArray(body.semanticAvailableModels)
+    ? body.semanticAvailableModels.filter((item) => typeof item === "string" && item.trim())
+    : Array.isArray(config.semanticAvailableModels) ? config.semanticAvailableModels : [];
 
   const nextConfig = {
     ...config,
@@ -742,7 +945,10 @@ async function handleAdminConfigPut(req, res) {
     imageBaseUrl: hasField("imageBaseUrl") ? String(body.imageBaseUrl || "").trim() : config.imageBaseUrl || "",
     imageModel: hasField("imageModel") ? String(body.imageModel || "").trim() : config.imageModel || "",
     imageAvailableModels: imageManualModels,
-    imageSize: hasField("imageSize") ? String(body.imageSize || "").trim() || "1024x1024" : config.imageSize || "1024x1024",
+    semanticBaseUrl: hasField("semanticBaseUrl") ? String(body.semanticBaseUrl || "").trim() : config.semanticBaseUrl || config.chatBaseUrl || config.baseUrl || "",
+    semanticModel: hasField("semanticModel") ? String(body.semanticModel || "").trim() : config.semanticModel || config.chatModel || config.model || "",
+    semanticAvailableModels: semanticManualModels,
+    imageSize: hasField("imageSize") ? normalizeImageSize(body.imageSize) : normalizeImageSize(config.imageSize || "1024x1024"),
     temperature: hasField("temperature") ? Number(body.temperature) : config.temperature,
     maxTokens: hasField("maxTokens") ? Number(body.maxTokens) : config.maxTokens,
     systemPrompt: hasField("systemPrompt") ? String(body.systemPrompt || "").trim() : config.systemPrompt
@@ -766,6 +972,14 @@ async function handleAdminConfigPut(req, res) {
     nextConfig.imageApiKey = effectiveImageApiKey;
   }
 
+  if (hasField("semanticApiKey")) {
+    const submittedSemanticApiKey = String(body.semanticApiKey || "").trim();
+    const effectiveSemanticApiKey = submittedSemanticApiKey || config.semanticApiKey || config.chatApiKey || config.apiKey || "";
+    const { encryptSecret } = require("./crypto");
+    nextConfig.semanticApiKeyEncrypted = effectiveSemanticApiKey ? encryptSecret(effectiveSemanticApiKey) : null;
+    nextConfig.semanticApiKey = effectiveSemanticApiKey;
+  }
+
   const newAdminPassword = typeof body.adminPassword === "string" ? body.adminPassword.trim() : "";
   if (newAdminPassword) {
     nextConfig.adminPasswordHash = hashPassword(newAdminPassword);
@@ -778,6 +992,11 @@ async function handleAdminConfigPut(req, res) {
 
   if (updatesApiConfig && (nextConfig.imageBaseUrl || nextConfig.imageModel) && (!nextConfig.imageBaseUrl || !nextConfig.imageModel)) {
     sendJson(res, 400, { error: "图片 API 如需启用，Base URL 和模型名称需要同时填写。" });
+    return;
+  }
+
+  if (updatesApiConfig && (nextConfig.semanticBaseUrl || nextConfig.semanticModel) && (!nextConfig.semanticBaseUrl || !nextConfig.semanticModel)) {
+    sendJson(res, 400, { error: "语义理解 API 如需启用，Base URL 和模型名称需要同时填写。" });
     return;
   }
 
@@ -1114,6 +1333,7 @@ async function handleAdminMessageDelete(req, res) {
 
 module.exports = {
   publicConfig,
+  handleGeneratedImage,
   handleAvatar,
   handleSongGet,
   handleCustomUserAvatar,
@@ -1132,6 +1352,7 @@ module.exports = {
   handleAdminModelsFetch,
   handleAdminTestConnection,
   handleAdminTestImageConnection,
+  handleAdminTestSemanticConnection,
   handleAdminConfigPut,
   handleAdminStats,
   handleAdminTokenStats,

@@ -9,6 +9,7 @@ const { cleanupVisitors } = require("./visitors");
 const { sendText, sendFile } = require("./utils");
 const {
   publicConfig,
+  handleGeneratedImage,
   handleAvatar,
   handleSongGet,
   handleCustomUserAvatar,
@@ -27,6 +28,7 @@ const {
   handleAdminModelsFetch,
   handleAdminTestConnection,
   handleAdminTestImageConnection,
+  handleAdminTestSemanticConnection,
   handleAdminConfigPut,
   handleAdminStats,
   handleAdminTokenStats,
@@ -83,6 +85,11 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === "GET" && url.pathname === "/api/config/public") {
       sendJson(res, 200, publicConfig(loadConfig()));
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname.startsWith("/api/generated-image/")) {
+      await handleGeneratedImage(req, res);
       return;
     }
 
@@ -208,6 +215,11 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === "POST" && url.pathname === "/api/admin/test-image-connection") {
       await handleAdminTestImageConnection(req, res);
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/admin/test-semantic-connection") {
+      await handleAdminTestSemanticConnection(req, res);
       return;
     }
 

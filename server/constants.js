@@ -6,6 +6,7 @@ const DATA_DIR = path.join(ROOT, "data");
 const CONFIG_PATH = path.join(DATA_DIR, "config.json");
 const USERS_DIR = path.join(DATA_DIR, "users");
 const SONGS_DIR = path.join(DATA_DIR, "songs");
+const GENERATED_IMAGES_DIR = path.join(DATA_DIR, "generated-images");
 const SONGS_INDEX_PATH = path.join(SONGS_DIR, "songs.json");
 const TOKEN_USAGE_PATH = path.join(DATA_DIR, "token-usage.json");
 const DEFAULT_ASSISTANT_AVATAR = path.join(DATA_DIR, "lingran.png");
@@ -30,6 +31,7 @@ const MIME_TYPES = {
   ".png": "image/png",
   ".jpg": "image/jpeg",
   ".jpeg": "image/jpeg",
+  ".webp": "image/webp",
   ".svg": "image/svg+xml",
   ".ico": "image/x-icon",
   ".mp3": "audio/mpeg",
@@ -48,6 +50,7 @@ module.exports = {
   CONFIG_PATH,
   USERS_DIR,
   SONGS_DIR,
+  GENERATED_IMAGES_DIR,
   SONGS_INDEX_PATH,
   TOKEN_USAGE_PATH,
   DEFAULT_ASSISTANT_AVATAR,
