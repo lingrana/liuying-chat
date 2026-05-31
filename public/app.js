@@ -418,7 +418,19 @@ async function fetchJson(url, options = {}) {
       ...(options.headers || {})
     }
   });
-  const data = await response.json();
+  const text = await response.text();
+  let data;
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    const plainText = text
+      .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "")
+      .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, "")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    throw new Error(plainText || `HTTP ${response.status} 返回了非 JSON 响应`);
+  }
   if (!response.ok) {
     throw new Error(data.error || "请求失败");
   }

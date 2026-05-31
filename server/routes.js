@@ -106,58 +106,75 @@ async function classifyUserIntent(semanticConfig, conversation, message) {
     .slice(-8)
     .map((item) => `${item.role}: ${String(item.content || "").slice(0, 300)}`)
     .join("\n");
-  const requestBody = {
-    model: semanticConfig.model,
-    temperature: 0,
-    max_tokens: 8,
-    stream: false,
-    messages: [
-      {
-        role: "system",
-        content: [
-          "你是内部意图分类器，只输出一个英文单词，不要输出解释。",
-          "你的任务不是回答用户能不能做，而是选择哪个下游 API 最适合满足用户真实意图。",
-          "基于当前用户消息和最近对话语义，判断下一步只应该调用哪个 API。",
-          "如果满足用户请求需要生成或发送一张视觉图片、照片、画像、插画或视觉结果，只输出 image。",
-          "如果用户是在询问、讨论、排查、抱怨或配置生图/图片功能，而不是要立即生成一张图，只输出 chat。",
-          "如果用户只是问你会不会画图、能不能生图、图片接口是否可用，只输出 chat。",
-          "如果当前消息是对上一轮视觉创作请求的继续确认，例如“就按刚才的画出来”，并且最近对话里有可用于生成画面的内容，只输出 image。",
-          "其他所有情况，包括普通聊天、解释、描述、问答、音乐、代码和设定讨论，只输出 chat。",
-          "只能输出两个结果之一：chat 或 image。不要输出 JSON、标点、解释或其他文字。"
-        ].join("\n")
-      },
-      {
-        role: "user",
-        content: [
-          "最近对话：",
-          recentMessages || "（无）",
-          "",
-          "当前用户消息：",
-          message
-        ].join("\n")
-      }
-    ]
-  };
 
-  let apiResult;
-  try {
-    apiResult = await callModelApi(semanticConfig, requestBody, false);
-  } catch (error) {
-    throw new Error(`无法连接语义理解 API：${error.message}`);
+  async function requestIntent(maxTokens, retry = false) {
+    const requestBody = {
+      model: semanticConfig.model,
+      temperature: 0,
+      max_tokens: maxTokens,
+      stream: false,
+      messages: [
+        {
+          role: "system",
+          content: [
+            "你是内部意图分类器，只输出一个英文单词，不要输出解释。",
+            "你的任务不是回答用户能不能做，而是选择哪个下游 API 最适合满足用户真实意图。",
+            "基于当前用户消息和最近对话语义，判断下一步只应该调用哪个 API。",
+            "如果满足用户请求需要生成或发送一张视觉图片、照片、画像、插画或视觉结果，只输出 image。",
+            "如果用户是在询问、讨论、排查、抱怨或配置生图/图片功能，而不是要立即生成一张图，只输出 chat。",
+            "如果用户只是问你会不会画图、能不能生图、图片接口是否可用，只输出 chat。",
+            "如果当前消息是对上一轮视觉创作请求的继续确认，例如“就按刚才的画出来”，并且最近对话里有可用于生成画面的内容，只输出 image。",
+            "其他所有情况，包括普通聊天、解释、描述、问答、音乐、代码和设定讨论，只输出 chat。",
+            retry ? "上一轮输出为空或格式不正确。现在不要思考过程，不要解释，只输出 chat 或 image。" : "",
+            "只能输出两个结果之一：chat 或 image。不要输出 JSON、标点、解释或其他文字。"
+          ].filter(Boolean).join("\n")
+        },
+        {
+          role: "user",
+          content: [
+            "最近对话：",
+            recentMessages || "（无）",
+            "",
+            "当前用户消息：",
+            message
+          ].join("\n")
+        }
+      ]
+    };
+
+    let apiResult;
+    try {
+      apiResult = await callModelApi(semanticConfig, requestBody, false);
+    } catch (error) {
+      throw new Error(`无法连接语义理解 API：${error.message}`);
+    }
+
+    const { apiResponse, payload } = apiResult;
+    if (!apiResponse.ok) {
+      throw new Error(`语义理解 API 返回错误：${summarizeApiError(payload, apiResponse.status)}`);
+    }
+
+    const reply = extractAssistantReply(payload);
+    const rawPreview =
+      reply ||
+      (typeof payload?.raw === "string" ? payload.raw : "") ||
+      (typeof payload?.message === "string" ? payload.message : "") ||
+      (typeof payload?.error?.message === "string" ? payload.error.message : "");
+    return {
+      decision: parseIntentDecision(reply),
+      reply,
+      rawPreview
+    };
   }
 
-  const { apiResponse, payload } = apiResult;
-  if (!apiResponse.ok) {
-    throw new Error(`语义理解 API 返回错误：${summarizeApiError(payload, apiResponse.status)}`);
-  }
+  const first = await requestIntent(64, false);
+  if (first.decision) return first.decision;
 
-  const reply = extractAssistantReply(payload);
-  const decision = parseIntentDecision(reply);
-  if (!decision) {
-    const preview = String(reply || "").trim().slice(0, 120) || "空响应";
-    throw new Error(`语义理解 API 没有返回可识别的意图：${preview}`);
-  }
-  return decision;
+  const second = await requestIntent(128, true);
+  if (second.decision) return second.decision;
+
+  const preview = String(second.rawPreview || first.rawPreview || "").trim().slice(0, 120) || "空响应";
+  throw new Error(`语义理解 API 没有返回可识别的意图：${preview}`);
 }
 
 function requireAdminAuth(req, res) {
