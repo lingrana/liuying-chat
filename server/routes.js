@@ -93,12 +93,12 @@ function parseIntentDecision(reply) {
   const text = String(reply || "").trim().toLowerCase();
   const compact = text.replace(/[`"'“”‘’。，,.!！?？:：;；\s_-]+/g, "");
   if (["image", "imageapi", "图片api", "图像api", "调用图片api", "图片", "图像", "照片", "画图", "绘图", "生图"].includes(compact)) {
-    return { intent: "image" };
+    return { intent: "image", raw: text };
   }
   if (["chat", "chatapi", "对话api", "调用对话api", "聊天", "对话", "文字", "普通聊天"].includes(compact)) {
-    return { intent: "chat" };
+    return { intent: "chat", raw: text };
   }
-  return { intent: "chat" };
+  return null;
 }
 
 async function classifyUserIntent(semanticConfig, conversation, message) {
@@ -139,11 +139,25 @@ async function classifyUserIntent(semanticConfig, conversation, message) {
     ]
   };
 
-  const { apiResponse, payload } = await callModelApi(semanticConfig, requestBody, false);
-  if (!apiResponse.ok) {
-    return { intent: "chat" };
+  let apiResult;
+  try {
+    apiResult = await callModelApi(semanticConfig, requestBody, false);
+  } catch (error) {
+    throw new Error(`无法连接语义理解 API：${error.message}`);
   }
-  return parseIntentDecision(extractAssistantReply(payload));
+
+  const { apiResponse, payload } = apiResult;
+  if (!apiResponse.ok) {
+    throw new Error(`语义理解 API 返回错误：${summarizeApiError(payload, apiResponse.status)}`);
+  }
+
+  const reply = extractAssistantReply(payload);
+  const decision = parseIntentDecision(reply);
+  if (!decision) {
+    const preview = String(reply || "").trim().slice(0, 120) || "空响应";
+    throw new Error(`语义理解 API 没有返回可识别的意图：${preview}`);
+  }
+  return decision;
 }
 
 function requireAdminAuth(req, res) {
@@ -254,7 +268,13 @@ async function handleChat(req, res) {
     conversation = userStore.conversations[0];
   }
 
-  const imageDecision = await classifyUserIntent(semanticConfig, conversation, message);
+  let imageDecision;
+  try {
+    imageDecision = await classifyUserIntent(semanticConfig, conversation, message);
+  } catch (error) {
+    sendJson(res, 502, { error: error.message });
+    return;
+  }
   const imageRequested = imageDecision.intent === "image";
 
   if (!imageRequested && (!chatConfig.baseUrl || !chatConfig.model)) {
