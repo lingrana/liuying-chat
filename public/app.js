@@ -443,7 +443,7 @@ function wait(ms) {
 
 async function pollImageJob(imageJobId) {
   const startedAt = Date.now();
-  const maxWaitMs = 3 * 60 * 1000;
+  const maxWaitMs = 16 * 60 * 1000;
 
   while (Date.now() - startedAt < maxWaitMs) {
     await wait(2500);
@@ -457,7 +457,7 @@ async function pollImageJob(imageJobId) {
       renderConversations();
     }
 
-    if (data.status === "pending") {
+    if (data.status === "pending" || data.status === "processing") {
       continue;
     }
 

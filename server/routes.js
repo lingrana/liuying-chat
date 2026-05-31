@@ -18,6 +18,12 @@ const { getAdminConversationAudit, sanitizeAdminMessage, sanitizeAdminConversati
 let apiConnectionStatus = { ok: false, message: "未测试", testedAt: 0 };
 const imageGenerationLimits = new Map();
 const imageGenerationJobs = new Map();
+const IMAGE_JOB_TTL_MS = 2 * 60 * 60 * 1000;
+const IMAGE_JOB_RETRY_NOTICE_MS = 5 * 60 * 1000;
+const IMAGE_JOB_RETRY_STOP_MS = 15 * 60 * 1000;
+const IMAGE_JOB_RETRY_DELAY_MS = 15 * 1000;
+const IMAGE_JOB_BUSY_MESSAGE = "图片生成还在排队……我会继续等它完成。";
+const SEMANTIC_INTENT_TIMEOUT_MS = 4500;
 
 function getImageLimitKey({ sessionId, userKey }) {
   if (userKey) return userKey;
@@ -45,7 +51,11 @@ function setImageJob(jobId, updates) {
 function scheduleImageJobCleanup(jobId) {
   setTimeout(() => {
     imageGenerationJobs.delete(jobId);
-  }, 10 * 60 * 1000).unref();
+  }, IMAGE_JOB_TTL_MS).unref();
+}
+
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function getConversationList(userStore) {
@@ -146,59 +156,91 @@ async function runImageGenerationJob({
   clientIp,
   persistent
 }) {
-  try {
-    const { apiResponse, payload } = await callImageApi(imageConfig, prompt);
-    if (!apiResponse.ok) {
-      throw new Error(summarizeApiError(payload, apiResponse.status));
+  const startedAt = Date.now();
+  let lastError = null;
+
+  while (Date.now() - startedAt < IMAGE_JOB_RETRY_STOP_MS) {
+    try {
+      const { apiResponse, payload } = await callImageApi(imageConfig, prompt);
+      if (!apiResponse.ok) {
+        throw new Error(summarizeApiError(payload, apiResponse.status));
+      }
+
+      const imageUrl = resolveGeneratedImageUrl(extractGeneratedImageData(payload));
+      if (!imageUrl) {
+        throw new Error("图片 API 没有返回可用图片。");
+      }
+
+      const usage = getUsageFromPayload(payload);
+      recordUsageEvent({ type: "image", ...usage, ip: clientIp });
+
+      const reply = "我画好了……给你。";
+      const now = Date.now();
+      appendConversationMessage(conversation, "assistant", reply, now, {
+        kind: "image",
+        imageUrl,
+        imagePrompt
+      });
+      userStore.updatedAt = now;
+      save();
+
+      setImageJob(jobId, {
+        status: "done",
+        reply,
+        imageUrl,
+        imagePrompt,
+        error: "",
+        model: imageConfig.model,
+        persistent,
+        userAvatarUrl: resolveUserAvatarUrl(config, userStore),
+        conversationId: conversation.id,
+        conversations: getConversationList(userStore)
+      });
+      return;
+    } catch (error) {
+      lastError = error;
+      console.error("图片生成任务失败，准备重试:", error);
+
+      if (Date.now() - startedAt >= IMAGE_JOB_RETRY_NOTICE_MS) {
+        setImageJob(jobId, {
+          status: "pending",
+          reply: IMAGE_JOB_BUSY_MESSAGE,
+          error: error.message || "图片生成仍在等待。",
+          imagePrompt,
+          model: imageConfig.model,
+          persistent,
+          userAvatarUrl: resolveUserAvatarUrl(config, userStore),
+          conversationId: conversation.id,
+          conversations: getConversationList(userStore)
+        });
+      }
+
+      const remainingMs = IMAGE_JOB_RETRY_STOP_MS - (Date.now() - startedAt);
+      if (remainingMs <= 0) break;
+      await wait(Math.min(IMAGE_JOB_RETRY_DELAY_MS, remainingMs));
     }
-
-    const imageUrl = resolveGeneratedImageUrl(extractGeneratedImageData(payload));
-    if (!imageUrl) {
-      throw new Error("图片 API 没有返回可用图片。");
-    }
-
-    const usage = getUsageFromPayload(payload);
-    recordUsageEvent({ type: "image", ...usage, ip: clientIp });
-
-    const reply = "我画好了……给你。";
-    const now = Date.now();
-    appendConversationMessage(conversation, "assistant", reply, now, {
-      kind: "image",
-      imageUrl,
-      imagePrompt
-    });
-    userStore.updatedAt = now;
-    save();
-
-    setImageJob(jobId, {
-      status: "done",
-      reply,
-      imageUrl,
-      imagePrompt,
-      model: imageConfig.model,
-      persistent,
-      userAvatarUrl: resolveUserAvatarUrl(config, userStore),
-      conversationId: conversation.id,
-      conversations: getConversationList(userStore)
-    });
-  } catch (error) {
-    const reply = `图片没有顺利生成……${error.message}`;
-    const now = Date.now();
-    appendConversationMessage(conversation, "assistant", reply, now);
-    userStore.updatedAt = now;
-    save();
-
-    setImageJob(jobId, {
-      status: "error",
-      reply,
-      error: error.message || "图片生成失败。",
-      model: imageConfig.model,
-      persistent,
-      userAvatarUrl: resolveUserAvatarUrl(config, userStore),
-      conversationId: conversation.id,
-      conversations: getConversationList(userStore)
-    });
   }
+
+  const error = lastError || new Error("图片生成超时。");
+  console.error("图片生成任务超过重试时间，停止重试:", error);
+
+  const reply = `图片没有顺利生成……${error.message}`;
+  const now = Date.now();
+  appendConversationMessage(conversation, "assistant", reply, now);
+  userStore.updatedAt = now;
+  save();
+
+  setImageJob(jobId, {
+    status: "error",
+    reply,
+    error: error.message || "图片生成失败。",
+    imagePrompt,
+    model: imageConfig.model,
+    persistent,
+    userAvatarUrl: resolveUserAvatarUrl(config, userStore),
+    conversationId: conversation.id,
+    conversations: getConversationList(userStore)
+  });
 }
 
 function parseIntentDecision(reply) {
@@ -236,6 +278,8 @@ async function classifyUserIntent(semanticConfig, conversation, message) {
             "如果用户是在询问、讨论、排查、抱怨或配置生图/图片功能，而不是要立即生成一张图，只输出 chat。",
             "如果用户只是问你会不会画图、能不能生图、图片接口是否可用，只输出 chat。",
             "如果当前消息是对上一轮视觉创作请求的继续确认，例如“就按刚才的画出来”，并且最近对话里有可用于生成画面的内容，只输出 image。",
+            "示例：用户说“我想看看你”“你能发一张你现在的图片么”“发一张你的照片”“让我看看你现在的样子”，真实意图是要视觉结果，只输出 image。",
+            "示例：用户说“生图逻辑有问题”“图片接口报错”“为什么不能发图”，真实意图是讨论或排查功能，只输出 chat。",
             "其他所有情况，包括普通聊天、解释、描述、问答、音乐、代码和设定讨论，只输出 chat。",
             "不要输出思考过程，不要先分析，直接输出最终分类词。",
             retry ? "上一轮输出为空或格式不正确。现在不要思考过程，不要解释，只输出 chat 或 image。" : "",
@@ -257,7 +301,7 @@ async function classifyUserIntent(semanticConfig, conversation, message) {
 
     let apiResult;
     try {
-      apiResult = await callModelApi(semanticConfig, requestBody, false);
+      apiResult = await callModelApi(semanticConfig, requestBody, false, SEMANTIC_INTENT_TIMEOUT_MS);
     } catch (error) {
       throw new Error(`无法连接语义理解 API：${error.message}`);
     }
@@ -283,10 +327,10 @@ async function classifyUserIntent(semanticConfig, conversation, message) {
     };
   }
 
-  const first = await requestIntent(256, false);
+  const first = await requestIntent(64, false);
   if (first.decision) return first.decision;
 
-  const second = await requestIntent(512, true);
+  const second = await requestIntent(128, true);
   if (second.decision) return second.decision;
 
   const preview = String(second.rawPreview || first.rawPreview || "").trim().slice(0, 120) || "空响应";
@@ -578,7 +622,7 @@ async function handleChat(req, res) {
       conversations: getConversationList(userStore)
     });
     scheduleImageJobCleanup(imageJobId);
-    runImageGenerationJob({
+    const imageJobPayload = {
       jobId: imageJobId,
       imageConfig,
       prompt: promptResult.prompt,
@@ -589,7 +633,7 @@ async function handleChat(req, res) {
       config,
       clientIp,
       persistent
-    });
+    };
 
     sendJson(res, 200, {
       reply,
@@ -601,6 +645,11 @@ async function handleChat(req, res) {
       userAvatarUrl: resolveUserAvatarUrl(config, userStore),
       conversationId: conversation.id,
       conversations: getConversationList(userStore)
+    });
+    setImmediate(() => {
+      runImageGenerationJob(imageJobPayload).catch((error) => {
+        console.error("图片生成任务异常:", error);
+      });
     });
     return;
   }

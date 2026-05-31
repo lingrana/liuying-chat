@@ -3,7 +3,7 @@ const { CACHE_TTL_MS } = require("./constants");
 const { getCachedResponse, setCachedResponse, incrementCacheHits, incrementCacheMisses } = require("./cache");
 const { summarizeApiError } = require("./utils");
 
-const IMAGE_API_TIMEOUT_MS = 120 * 1000;
+const IMAGE_API_TIMEOUT_MS = 600 * 1000;
 const IMAGE_PROMPT_MAX_LENGTH = 1800;
 const VALID_IMAGE_SIZES = new Set([
   "auto",
@@ -87,7 +87,7 @@ function generateCacheKey(config, requestBody) {
   return crypto.createHash("sha256").update(JSON.stringify(keyData)).digest("hex");
 }
 
-async function callModelApi(config, requestBody, useCache = true) {
+async function callModelApi(config, requestBody, useCache = true, timeoutMs = 0) {
   const cacheKey = useCache ? generateCacheKey(config, requestBody) : null;
 
   if (cacheKey) {
@@ -106,13 +106,27 @@ async function callModelApi(config, requestBody, useCache = true) {
   if (config.apiKey) {
     headers.Authorization = `Bearer ${config.apiKey}`;
   }
-  const apiResponse = await fetch(chatUrl, {
-    method: "POST",
-    headers,
-    body: JSON.stringify(requestBody)
-  });
+  const controller = timeoutMs > 0 ? new AbortController() : null;
+  const timeout = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
+  let apiResponse;
+  let text = "";
+  try {
+    apiResponse = await fetch(chatUrl, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(requestBody),
+      signal: controller?.signal
+    });
+    text = await apiResponse.text();
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      throw new Error("上游 API 请求超时，请稍后再试。");
+    }
+    throw error;
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
 
-  const text = await apiResponse.text();
   let payload;
   try {
     payload = JSON.parse(text);
@@ -146,6 +160,7 @@ async function callImageApi(config, prompt) {
     size: normalizeImageSize(config.size || "1024x1024")
   };
   let apiResponse;
+  let text = "";
   try {
     apiResponse = await fetch(imageUrl, {
       method: "POST",
@@ -153,6 +168,7 @@ async function callImageApi(config, prompt) {
       body: JSON.stringify(requestBody),
       signal: controller.signal
     });
+    text = await apiResponse.text();
   } catch (error) {
     if (error?.name === "AbortError") {
       throw new Error("图片 API 请求超时，请稍后再试。");
@@ -162,7 +178,6 @@ async function callImageApi(config, prompt) {
     clearTimeout(timeout);
   }
 
-  const text = await apiResponse.text();
   let payload;
   try {
     payload = JSON.parse(text);
