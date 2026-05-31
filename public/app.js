@@ -114,7 +114,7 @@ function sanitizeAnnouncementHtml(html) {
   const template = document.createElement("template");
   template.innerHTML = String(html || "");
   const blockedTags = new Set([
-    "script", "style", "iframe", "object", "embed", "link", "meta", "base",
+    "script", "iframe", "object", "embed", "link", "meta", "base",
     "form", "input", "button", "textarea", "select", "option"
   ]);
 
@@ -128,7 +128,7 @@ function sanitizeAnnouncementHtml(html) {
     for (const attr of Array.from(node.attributes)) {
       const name = attr.name.toLowerCase();
       const value = attr.value;
-      if (name.startsWith("on") || name === "srcdoc" || name === "style") {
+      if (name.startsWith("on") || name === "srcdoc") {
         node.removeAttribute(attr.name);
         continue;
       }
