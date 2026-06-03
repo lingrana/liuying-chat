@@ -15,6 +15,7 @@ const availableModelsList = document.getElementById("availableModelsList");
 const fetchImageModelsButton = document.getElementById("fetchImageModelsButton");
 const fetchImageModelsStatus = document.getElementById("fetchImageModelsStatus");
 const imageAvailableModelsList = document.getElementById("imageAvailableModelsList");
+const imageDailyUsageHint = document.getElementById("imageDailyUsageHint");
 const fetchSemanticModelsButton = document.getElementById("fetchSemanticModelsButton");
 const fetchSemanticModelsStatus = document.getElementById("fetchSemanticModelsStatus");
 const semanticAvailableModelsList = document.getElementById("semanticAvailableModelsList");
@@ -43,6 +44,7 @@ const apiFields = {
   imageBaseUrl: document.getElementById("imageBaseUrlInput"),
   imageApiKey: document.getElementById("imageApiKeyInput"),
   imageModel: document.getElementById("imageModelInput"),
+  imageDailyLimit: document.getElementById("imageDailyLimitInput"),
   semanticBaseUrl: document.getElementById("semanticBaseUrlInput"),
   semanticApiKey: document.getElementById("semanticApiKeyInput"),
   semanticModel: document.getElementById("semanticModelInput")
@@ -89,6 +91,24 @@ const auditTotalSessions = document.getElementById("auditTotalSessions");
 
 // 记录展开状态
 const expandedIps = new Set();
+
+function normalizeAuditIp(ip) {
+  const value = String(ip || "").trim();
+  return value || "unknown";
+}
+
+function getAuditItemKey(item) {
+  return `ip:${normalizeAuditIp(item?.ip)}`;
+}
+
+function pruneExpandedAuditKeys(items) {
+  const availableKeys = new Set(items.map(getAuditItemKey));
+  for (const key of Array.from(expandedIps)) {
+    if (!availableKeys.has(key)) {
+      expandedIps.delete(key);
+    }
+  }
+}
 
 function getModelUi(target = "chat") {
   const isImage = target === "image";
@@ -138,6 +158,18 @@ function renderAvailableModels(models, target = "chat") {
       button.classList.add("active");
     });
   });
+}
+
+function renderImageDailyUsage(usage) {
+  if (!imageDailyUsageHint) return;
+  if (!usage) {
+    imageDailyUsageHint.textContent = "";
+    return;
+  }
+  const used = Number(usage.used) || 0;
+  const limit = Number(usage.limit) || 50;
+  const remaining = Math.max(0, Number(usage.remaining) || 0);
+  imageDailyUsageHint.textContent = `今日公共图片额度：${used} / ${limit}，剩余 ${remaining} 张。用户自定义图片 API 不计入额度。`;
 }
 
 function switchApiPanel(target) {
@@ -318,15 +350,6 @@ async function loadSongs() {
   renderSongs(data.songs || []);
 }
 
-function readFileAsDataUrl(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result || ""));
-    reader.onerror = () => reject(reader.error || new Error("读取文件失败"));
-    reader.readAsDataURL(file);
-  });
-}
-
 async function uploadSong(event) {
   event.preventDefault();
   const file = songFileInput?.files?.[0];
@@ -337,26 +360,20 @@ async function uploadSong(event) {
     songUploadStatus.style.color = "#d44";
     return;
   }
-  if (file.size > 20 * 1024 * 1024) {
-    songUploadStatus.textContent = "音频文件不能超过 20MB";
-    songUploadStatus.classList.add("visible");
-    songUploadStatus.style.color = "#d44";
-    return;
-  }
-
   songUploadStatus.textContent = "上传中…";
   songUploadStatus.classList.add("visible");
   songUploadStatus.style.color = "var(--accent)";
-  const dataUrl = await readFileAsDataUrl(file);
+  const formData = new FormData();
+  formData.append("title", title);
+  formData.append("fileName", file.name);
+  formData.append("mimeType", file.type || "audio/mpeg");
+  formData.append("file", file, file.name);
+  const headers = authHeaders();
+  delete headers["Content-Type"];
   const response = await fetch("/api/admin/songs", {
     method: "POST",
-    headers: authHeaders(),
-    body: JSON.stringify({
-      title,
-      fileName: file.name,
-      mimeType: file.type || "audio/mpeg",
-      dataUrl
-    })
+    headers,
+    body: formData
   });
   if (response.status === 401) {
     window.location.reload();
@@ -555,15 +572,15 @@ function filterAndSortAuditItems(items) {
       sorted.sort((a, b) => (b.requests || 0) - (a.requests || 0));
       break;
     case "sessions":
-      sorted.sort((a, b) => (Array.isArray(b.sessions) ? b.sessions.length : 0) - (Array.isArray(a.sessions) ? a.sessions.length : 0));
+      sorted.sort((a, b) => (Number(b.sessionCount) || (Array.isArray(b.sessions) ? b.sessions.length : 0)) - (Number(a.sessionCount) || (Array.isArray(a.sessions) ? a.sessions.length : 0)));
       break;
     case "recent":
       sorted.sort((a, b) => {
-        const aTime = Math.max(...(Array.isArray(a.sessions) ? a.sessions.map(s => {
+        const aTime = Number(a.latestAt) || Math.max(...(Array.isArray(a.sessions) ? a.sessions.map(s => {
           const convs = Array.isArray(s.conversations) ? s.conversations : [];
           return Math.max(...convs.map(c => c.updatedAt || 0), 0);
         }) : [0]), 0);
-        const bTime = Math.max(...(Array.isArray(b.sessions) ? b.sessions.map(s => {
+        const bTime = Number(b.latestAt) || Math.max(...(Array.isArray(b.sessions) ? b.sessions.map(s => {
           const convs = Array.isArray(s.conversations) ? s.conversations : [];
           return Math.max(...convs.map(c => c.updatedAt || 0), 0);
         }) : [0]), 0);
@@ -583,6 +600,7 @@ function renderIpAudit(data) {
   if (auditRetentionLabel) {
     auditRetentionLabel.textContent = `仅保留 ${data.retentionDays || 3} 天`;
   }
+  pruneExpandedAuditKeys(allItems);
   
   // 更新统计
   updateAuditStats(allItems);
@@ -613,7 +631,7 @@ function renderIpAudit(data) {
     return;
   }
 
-  ipAuditList.innerHTML = pageItems.map((item, index) => {
+  ipAuditList.innerHTML = pageItems.map((item) => {
     const sessions = Array.isArray(item.sessions) ? item.sessions : [];
     const tokenEvents = Array.isArray(item.tokenEvents) ? item.tokenEvents : [];
     const sessionHtml = sessions.length
@@ -663,13 +681,16 @@ function renderIpAudit(data) {
           </div>
         `).join("")
       : `<div class="empty-state">暂无消耗记录</div>`;
-    const ip = item.ip || "unknown";
-    const isExpanded = expandedIps.has(ip);
+    const ip = normalizeAuditIp(item.ip);
+    const auditKey = getAuditItemKey(item);
+    const isExpanded = expandedIps.has(auditKey);
+    const latestAt = Number(item.latestAt) || 0;
+    const conversationCount = Number(item.conversationCount) || sessions.reduce((sum, session) => sum + ((session.conversations || []).length), 0);
     return `
-      <div class="audit-item${isExpanded ? " open" : ""}" data-ip="${escapeHtml(ip)}">
-        <button class="audit-summary" type="button">
+      <div class="audit-item${isExpanded ? " open" : ""}" data-ip="${escapeHtml(ip)}" data-audit-key="${escapeHtml(auditKey)}">
+        <button class="audit-summary" type="button" aria-expanded="${isExpanded ? "true" : "false"}">
           <span class="audit-ip">${escapeHtml(ip)}</span>
-          <span class="audit-meta">${formatTokenCount(item.totalTokens || 0)} tokens · ${item.requests || 0} 次 · ${sessions.length} 个会话</span>
+          <span class="audit-meta">${formatTokenCount(item.totalTokens || 0)} tokens · ${item.requests || 0} 次 · ${sessions.length} 个会话 · ${conversationCount} 个对话${latestAt ? ` · ${formatDateTime(latestAt)}` : ""}</span>
         </button>
         <div class="audit-detail">
           <div class="audit-toolbar">
@@ -753,15 +774,15 @@ async function handleAuditAction(event) {
   if (button.classList.contains("audit-summary")) {
     const auditItem = button.closest(".audit-item");
     if (auditItem) {
-      const ip = auditItem.getAttribute("data-ip");
-      const isOpen = auditItem.classList.toggle("open");
-      if (ip) {
-        if (isOpen) {
-          expandedIps.add(ip);
-        } else {
-          expandedIps.delete(ip);
-        }
+      const auditKey = auditItem.getAttribute("data-audit-key") || `ip:${normalizeAuditIp(auditItem.getAttribute("data-ip"))}`;
+      const nextOpen = !expandedIps.has(auditKey);
+      if (nextOpen) {
+        expandedIps.add(auditKey);
+      } else {
+        expandedIps.delete(auditKey);
       }
+      auditItem.classList.toggle("open", nextOpen);
+      button.setAttribute("aria-expanded", nextOpen ? "true" : "false");
     }
     return;
   }
@@ -1013,6 +1034,7 @@ async function loadConfig() {
   renderAvailableModels(chatModels, "chat");
   renderAvailableModels(imageModels, "image");
   renderAvailableModels(semanticModels, "semantic");
+  renderImageDailyUsage(config.imageDailyUsage);
   apiSaveStatus.textContent = "";
   siteSaveStatus.textContent = "";
 }
@@ -1060,6 +1082,7 @@ async function saveApiConfig(event) {
 
   apiSaveStatus.textContent = "✓ 已保存";
   apiSaveStatus.style.color = "var(--accent)";
+  renderImageDailyUsage(data.config?.imageDailyUsage);
 }
 
 async function saveSiteConfig(event) {

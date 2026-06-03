@@ -4,6 +4,7 @@
   "private": true,
   "description": "Firefly themed chat site with visitor stats and configurable OpenAI-compatible API backend.",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "check": "node --check server.js && node --check server/index.js && node --check server/routes.js && node --check server/admin-audit.js && node --check server/api-client.js && node --check server/crypto.js && node --check server/utils.js && node --check public/app.js && node --check public/admin.js"
   }
 }

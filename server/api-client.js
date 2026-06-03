@@ -1,5 +1,5 @@
 const crypto = require("crypto");
-const { CACHE_TTL_MS } = require("./constants");
+const { CACHE_TTL_MS, CHAT_API_TIMEOUT_MS, MODEL_LIST_TIMEOUT_MS } = require("./constants");
 const { getCachedResponse, setCachedResponse, incrementCacheHits, incrementCacheMisses } = require("./cache");
 const { summarizeApiError } = require("./utils");
 
@@ -106,8 +106,9 @@ async function callModelApi(config, requestBody, useCache = true, timeoutMs = 0)
   if (config.apiKey) {
     headers.Authorization = `Bearer ${config.apiKey}`;
   }
-  const controller = timeoutMs > 0 ? new AbortController() : null;
-  const timeout = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
+  const effectiveTimeoutMs = timeoutMs > 0 ? timeoutMs : CHAT_API_TIMEOUT_MS;
+  const controller = effectiveTimeoutMs > 0 ? new AbortController() : null;
+  const timeout = controller ? setTimeout(() => controller.abort(), effectiveTimeoutMs) : null;
   let apiResponse;
   let text = "";
   try {
@@ -467,10 +468,23 @@ async function fetchModelList(config) {
   if (apiKey) {
     headers.Authorization = `Bearer ${apiKey}`;
   }
-  const response = await fetch(modelsUrl, {
-    method: "GET",
-    headers
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), MODEL_LIST_TIMEOUT_MS);
+  let response;
+  try {
+    response = await fetch(modelsUrl, {
+      method: "GET",
+      headers,
+      signal: controller.signal
+    });
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      throw new Error("获取模型列表超时，请稍后再试。");
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
 
   const text = await response.text();
   let payload;

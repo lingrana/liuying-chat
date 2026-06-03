@@ -4,16 +4,18 @@ const path = require("path");
 const { loadConfig, saveConfig, stripPlainSecrets, sanitizeAdminConfig } = require("./config");
 const { hashPassword, generateAdminToken, verifyAdminToken, generateUUID } = require("./crypto");
 const { ADMIN_TOKEN_TTL_MS, IMAGE_GENERATION_COOLDOWN_MS, GENERATED_IMAGES_DIR } = require("./constants");
-const { parseBody, sendJson, sendText, sendFile, getClientIp, summarizeApiError, inferExtensionFromMime } = require("./utils");
+const { parseBody, parseMultipartForm, sendJson, sendText, sendFile, getClientIp, summarizeApiError, inferExtensionFromMime } = require("./utils");
 const { cleanupExpiredPersistentUsers, getOrCreateUserStore, ensureConversation, createConversation, sanitizeConversation, appendConversationMessage, deriveConversationTitle, loadPersistentUserStore, savePersistentUserStore, deletePersistentUserStore, listPersistentUserStores, findPersistentUserStoreBySessionId, normalizeConversationMessage } = require("./users");
 const { loadSongs, saveSongs, sanitizeSong, getSongFilePath, findRequestedSong } = require("./songs");
 const { getVisitorSnapshot, recordVisitor } = require("./visitors");
 const { recordTokenUsage, recordUsageEvent, getTokenStats, getTokenUsageEvents, setTokenUsageEvents, normalizeTokenUsageEvent, saveTokenUsageEvents } = require("./token-usage");
 const { clearCache, getCacheStats, setCacheMaxSize } = require("./cache");
 const { getChatConfig, getImageConfig, getSemanticConfig, callModelApi, callImageApi, extractAssistantReply, getUsageFromPayload, buildImagePrompt, extractGeneratedImageData, fetchModelList, normalizeImageSize } = require("./api-client");
+const { IMAGE_DAILY_LIMIT_HELP_URL, IMAGE_DAILY_LIMIT_MAX, getImageDailyUsageSnapshot, normalizeImageDailyLimit, reserveImageDailyQuota } = require("./image-limit");
 const { buildChatMessages } = require("./prompts");
 const { getAvatarPath, resolveAvatarUrl, resolveUserAvatarUrl, getCustomUserAvatarPath, saveUserAvatarFromDataUrl } = require("./avatars");
 const { getAdminConversationAudit, sanitizeAdminMessage, sanitizeAdminConversation, resolveAdminUserStore, findConversationForAdmin, findMessageForAdmin } = require("./admin-audit");
+const { writeFileAtomic } = require("./file-store");
 
 let apiConnectionStatus = { ok: false, message: "未测试", testedAt: 0 };
 const imageGenerationLimits = new Map();
@@ -39,6 +41,25 @@ function markImageGenerated(limitKey) {
   imageGenerationLimits.set(limitKey, Date.now());
 }
 
+function readCustomImageConfig(body) {
+  const raw = body && typeof body.customImageApi === "object" && body.customImageApi !== null
+    ? body.customImageApi
+    : {};
+  const baseUrl = typeof raw.baseUrl === "string" ? raw.baseUrl.trim() : "";
+  const apiKey = typeof raw.apiKey === "string" ? raw.apiKey.trim() : "";
+  const model = typeof raw.model === "string" ? raw.model.trim() : "";
+  const sizeRaw = typeof raw.size === "string" ? raw.size.trim() : "";
+  return {
+    provided: Boolean(baseUrl || apiKey || model || sizeRaw),
+    config: {
+      baseUrl,
+      apiKey,
+      model,
+      size: normalizeImageSize(sizeRaw || "1024x1024")
+    }
+  };
+}
+
 function setImageJob(jobId, updates) {
   const current = imageGenerationJobs.get(jobId) || {};
   imageGenerationJobs.set(jobId, {
@@ -56,6 +77,20 @@ function scheduleImageJobCleanup(jobId) {
 
 function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function resolveImageJobStore({ userKey, userStore, conversation, conversationId }) {
+  const latestStore = userKey ? (loadPersistentUserStore(userKey) || userStore) : userStore;
+  const latestConversation = ensureConversation(latestStore, conversationId || conversation?.id);
+  return { userStore: latestStore, conversation: latestConversation };
+}
+
+function saveImageJobStore(userKey, userStore, save) {
+  if (userKey) {
+    savePersistentUserStore(userKey, userStore);
+    return;
+  }
+  save();
 }
 
 function getConversationList(userStore) {
@@ -150,11 +185,15 @@ async function runImageGenerationJob({
   prompt,
   imagePrompt,
   conversation,
+  conversationId,
   userStore,
+  userKey,
   save,
   config,
   clientIp,
-  persistent
+  persistent,
+  trackUsage = true,
+  displayModel = imageConfig.model
 }) {
   const startedAt = Date.now();
   let lastError = null;
@@ -171,18 +210,21 @@ async function runImageGenerationJob({
         throw new Error("图片 API 没有返回可用图片。");
       }
 
-      const usage = getUsageFromPayload(payload);
-      recordUsageEvent({ type: "image", ...usage, ip: clientIp });
+      if (trackUsage) {
+        const usage = getUsageFromPayload(payload);
+        recordUsageEvent({ type: "image", ...usage, ip: clientIp });
+      }
 
       const reply = "我画好了……给你。";
       const now = Date.now();
-      appendConversationMessage(conversation, "assistant", reply, now, {
+      const latest = resolveImageJobStore({ userKey, userStore, conversation, conversationId });
+      appendConversationMessage(latest.conversation, "assistant", reply, now, {
         kind: "image",
         imageUrl,
         imagePrompt
       });
-      userStore.updatedAt = now;
-      save();
+      latest.userStore.updatedAt = now;
+      saveImageJobStore(userKey, latest.userStore, save);
 
       setImageJob(jobId, {
         status: "done",
@@ -190,11 +232,11 @@ async function runImageGenerationJob({
         imageUrl,
         imagePrompt,
         error: "",
-        model: imageConfig.model,
+        model: displayModel,
         persistent,
-        userAvatarUrl: resolveUserAvatarUrl(config, userStore),
-        conversationId: conversation.id,
-        conversations: getConversationList(userStore)
+        userAvatarUrl: resolveUserAvatarUrl(config, latest.userStore),
+        conversationId: latest.conversation.id,
+        conversations: getConversationList(latest.userStore)
       });
       return;
     } catch (error) {
@@ -202,16 +244,17 @@ async function runImageGenerationJob({
       console.error("图片生成任务失败，准备重试:", error);
 
       if (Date.now() - startedAt >= IMAGE_JOB_RETRY_NOTICE_MS) {
+        const latest = resolveImageJobStore({ userKey, userStore, conversation, conversationId });
         setImageJob(jobId, {
           status: "pending",
           reply: IMAGE_JOB_BUSY_MESSAGE,
           error: error.message || "图片生成仍在等待。",
           imagePrompt,
-          model: imageConfig.model,
+          model: displayModel,
           persistent,
-          userAvatarUrl: resolveUserAvatarUrl(config, userStore),
-          conversationId: conversation.id,
-          conversations: getConversationList(userStore)
+          userAvatarUrl: resolveUserAvatarUrl(config, latest.userStore),
+          conversationId: latest.conversation.id,
+          conversations: getConversationList(latest.userStore)
         });
       }
 
@@ -226,20 +269,21 @@ async function runImageGenerationJob({
 
   const reply = `图片没有顺利生成……${error.message}`;
   const now = Date.now();
-  appendConversationMessage(conversation, "assistant", reply, now);
-  userStore.updatedAt = now;
-  save();
+  const latest = resolveImageJobStore({ userKey, userStore, conversation, conversationId });
+  appendConversationMessage(latest.conversation, "assistant", reply, now);
+  latest.userStore.updatedAt = now;
+  saveImageJobStore(userKey, latest.userStore, save);
 
   setImageJob(jobId, {
     status: "error",
     reply,
     error: error.message || "图片生成失败。",
     imagePrompt,
-    model: imageConfig.model,
+    model: displayModel,
     persistent,
-    userAvatarUrl: resolveUserAvatarUrl(config, userStore),
-    conversationId: conversation.id,
-    conversations: getConversationList(userStore)
+    userAvatarUrl: resolveUserAvatarUrl(config, latest.userStore),
+    conversationId: latest.conversation.id,
+    conversations: getConversationList(latest.userStore)
   });
 }
 
@@ -383,8 +427,9 @@ async function handleSongGet(req, res) {
   }
   const { SONGS_DIR } = require("./constants");
   const filePath = getSongFilePath(song);
-  const safePath = require("path").normalize(filePath);
-  if (!safePath.startsWith(SONGS_DIR)) {
+  const songsRoot = require("path").resolve(SONGS_DIR);
+  const safePath = require("path").resolve(filePath);
+  if (safePath !== songsRoot && !safePath.startsWith(songsRoot + require("path").sep)) {
     sendText(res, 403, "Forbidden");
     return;
   }
@@ -432,6 +477,7 @@ async function handleChat(req, res) {
   const message = typeof body.message === "string" ? body.message.trim() : "";
   const conversationId = typeof body.conversationId === "string" ? body.conversationId.trim() : "";
   const clientIp = getClientIp(req);
+  const customImageApi = readCustomImageConfig(body);
 
   if (!message) {
     sendJson(res, 400, { error: "消息不能为空。" });
@@ -540,7 +586,29 @@ async function handleChat(req, res) {
   }
 
   if (imageRequested) {
-    const imageConfig = getImageConfig(config);
+    const usingCustomImageApi = customImageApi.provided && Boolean(customImageApi.config.baseUrl && customImageApi.config.model);
+    const imageConfig = usingCustomImageApi ? customImageApi.config : getImageConfig(config);
+    const displayImageModel = usingCustomImageApi ? "" : imageConfig.model;
+
+    if (customImageApi.provided && !usingCustomImageApi) {
+      const reply = "自定义图片 API 需要填写 Base URL 和模型名称；API Key 可按接口要求填写。";
+      const now = Date.now();
+      appendConversationMessage(conversation, "user", message, now);
+      appendConversationMessage(conversation, "assistant", reply, now + 1);
+      userStore.updatedAt = now + 1;
+      save();
+      sendJson(res, 200, {
+        reply,
+        model: displayImageModel,
+        kind: "text",
+        persistent,
+        userAvatarUrl: resolveUserAvatarUrl(config, userStore),
+        conversationId: conversation.id,
+        conversations: getConversationList(userStore)
+      });
+      return;
+    }
+
     if (!imageConfig.baseUrl || !imageConfig.model) {
       const reply = "嗯……我知道你想要一张图片。不过这边还没有接上图片接口。等后台把图片 API 的 Base URL 和模型名称配置好，我就能试着画给你。";
       const now = Date.now();
@@ -550,7 +618,7 @@ async function handleChat(req, res) {
       save();
       sendJson(res, 200, {
         reply,
-        model: imageConfig.model,
+        model: displayImageModel,
         kind: "text",
         persistent,
         userAvatarUrl: resolveUserAvatarUrl(config, userStore),
@@ -570,7 +638,7 @@ async function handleChat(req, res) {
       save();
       sendJson(res, 200, {
         reply,
-        model: imageConfig.model,
+        model: displayImageModel,
         kind: "text",
         persistent,
         userAvatarUrl: resolveUserAvatarUrl(config, userStore),
@@ -580,29 +648,51 @@ async function handleChat(req, res) {
       return;
     }
 
-    const limitKey = getImageLimitKey({ sessionId, userKey });
-    const cooldownMs = getImageCooldownMs(limitKey);
-    if (cooldownMs > 0) {
-      const waitMinutes = Math.ceil(cooldownMs / 60000);
-      const reply = `图片生成需要稍等一下……大约 ${waitMinutes} 分钟后再试。`;
-      const now = Date.now();
-      appendConversationMessage(conversation, "user", message, now);
-      appendConversationMessage(conversation, "assistant", reply, now + 1);
-      userStore.updatedAt = now + 1;
-      save();
-      sendJson(res, 200, {
-        reply,
-        model: imageConfig.model,
-        kind: "text",
-        persistent,
-        userAvatarUrl: resolveUserAvatarUrl(config, userStore),
-        conversationId: conversation.id,
-        conversations: getConversationList(userStore)
-      });
-      return;
-    }
+    if (!usingCustomImageApi) {
+      const limitKey = getImageLimitKey({ sessionId, userKey });
+      const cooldownMs = getImageCooldownMs(limitKey);
+      if (cooldownMs > 0) {
+        const waitMinutes = Math.ceil(cooldownMs / 60000);
+        const reply = `图片生成需要稍等一下……大约 ${waitMinutes} 分钟后再试。`;
+        const now = Date.now();
+        appendConversationMessage(conversation, "user", message, now);
+        appendConversationMessage(conversation, "assistant", reply, now + 1);
+        userStore.updatedAt = now + 1;
+        save();
+        sendJson(res, 200, {
+          reply,
+          model: displayImageModel,
+          kind: "text",
+          persistent,
+          userAvatarUrl: resolveUserAvatarUrl(config, userStore),
+          conversationId: conversation.id,
+          conversations: getConversationList(userStore)
+        });
+        return;
+      }
 
-    markImageGenerated(limitKey);
+      const dailyQuota = reserveImageDailyQuota(config);
+      if (!dailyQuota.ok) {
+        const reply = `今天的公共图片生成额度已用完（每日 ${dailyQuota.limit} 张）。你可以在右上角打开“自定义图片 API”，填入自己的接口后继续生成；接口入口：${IMAGE_DAILY_LIMIT_HELP_URL}`;
+        const now = Date.now();
+        appendConversationMessage(conversation, "user", message, now);
+        appendConversationMessage(conversation, "assistant", reply, now + 1);
+        userStore.updatedAt = now + 1;
+        save();
+        sendJson(res, 200, {
+          reply,
+          model: displayImageModel,
+          kind: "text",
+          persistent,
+          userAvatarUrl: resolveUserAvatarUrl(config, userStore),
+          conversationId: conversation.id,
+          conversations: getConversationList(userStore)
+        });
+        return;
+      }
+
+      markImageGenerated(limitKey);
+    }
 
     const imagePrompt = promptResult.userPrompt;
     const imageJobId = generateUUID();
@@ -621,7 +711,7 @@ async function handleChat(req, res) {
       status: "pending",
       reply,
       imagePrompt,
-      model: imageConfig.model,
+      model: displayImageModel,
       persistent,
       userAvatarUrl: resolveUserAvatarUrl(config, userStore),
       conversationId: conversation.id,
@@ -634,11 +724,15 @@ async function handleChat(req, res) {
       prompt: promptResult.prompt,
       imagePrompt,
       conversation,
+      conversationId: conversation.id,
       userStore,
+      userKey,
       save,
       config,
       clientIp,
-      persistent
+      persistent,
+      trackUsage: !usingCustomImageApi,
+      displayModel: displayImageModel
     };
 
     sendJson(res, 200, {
@@ -646,7 +740,7 @@ async function handleChat(req, res) {
       kind: "image_pending",
       imageJobId,
       imagePrompt,
-      model: imageConfig.model,
+      model: displayImageModel,
       persistent,
       userAvatarUrl: resolveUserAvatarUrl(config, userStore),
       conversationId: conversation.id,
@@ -819,7 +913,11 @@ async function handleUserProfilePut(req, res) {
 
 async function handleAdminConfigGet(req, res) {
   if (!requireAdminAuth(req, res)) return;
-  sendJson(res, 200, sanitizeAdminConfig(loadConfig()));
+  const config = loadConfig();
+  sendJson(res, 200, {
+    ...sanitizeAdminConfig(config),
+    imageDailyUsage: getImageDailyUsageSnapshot(config)
+  });
 }
 
 async function handleAdminSongsGet(req, res) {
@@ -829,13 +927,53 @@ async function handleAdminSongsGet(req, res) {
 
 async function handleAdminSongUpload(req, res) {
   if (!requireAdminAuth(req, res)) return;
-  const body = await parseBody(req);
-  const title = String(body.title || "").trim();
+  const contentType = String(req.headers["content-type"] || "").toLowerCase();
+  let title = "";
+  let originalName = "song.mp3";
+  let mimeType = "";
+  let buffer = Buffer.alloc(0);
   const artist = "AI流萤翻唱";
-  const originalName = String(body.fileName || "").trim() || "song.mp3";
-  const mimeType = String(body.mimeType || "").toLowerCase();
-  const dataUrl = String(body.dataUrl || "");
   const allowedMimeTypes = new Set(["audio/mpeg", "audio/mp3", "audio/wav", "audio/ogg", "audio/mp4", "audio/x-m4a", "audio/flac", "audio/aac"]);
+  const mimeTypeByExt = {
+    ".mp3": "audio/mpeg",
+    ".wav": "audio/wav",
+    ".ogg": "audio/ogg",
+    ".m4a": "audio/mp4",
+    ".mp4": "audio/mp4",
+    ".flac": "audio/flac",
+    ".aac": "audio/aac"
+  };
+
+  if (contentType.includes("multipart/form-data")) {
+    const { fields, files } = await parseMultipartForm(req, Infinity);
+    const file = files.file;
+    title = String(fields.title || "").trim();
+    originalName = require("path").basename(String(file?.fileName || fields.fileName || "song.mp3").trim() || "song.mp3");
+    mimeType = String(file?.mimeType || fields.mimeType || "").toLowerCase();
+    buffer = Buffer.isBuffer(file?.buffer) ? file.buffer : Buffer.alloc(0);
+  } else {
+    const body = await parseBody(req, Infinity);
+    title = String(body.title || "").trim();
+    originalName = require("path").basename(String(body.fileName || "").trim() || "song.mp3");
+    mimeType = String(body.mimeType || "").toLowerCase();
+    const dataUrl = String(body.dataUrl || "");
+    const match = dataUrl.match(/^data:audio\/[a-z0-9.+-]+;base64,([a-z0-9+/=\s]+)$/i);
+    if (!match) {
+      sendJson(res, 400, { error: "音频数据格式不正确。" });
+      return;
+    }
+    const base64 = match[1].replace(/\s/g, "");
+    if (!/^[A-Za-z0-9+/]+={0,2}$/.test(base64)) {
+      sendJson(res, 400, { error: "音频数据格式不正确。" });
+      return;
+    }
+    buffer = Buffer.from(base64, "base64");
+  }
+
+  const originalExt = require("path").extname(originalName).toLowerCase();
+  if (!allowedMimeTypes.has(mimeType) && mimeTypeByExt[originalExt]) {
+    mimeType = mimeTypeByExt[originalExt];
+  }
 
   if (!title) {
     sendJson(res, 400, { error: "请填写歌曲名称。" });
@@ -846,15 +984,8 @@ async function handleAdminSongUpload(req, res) {
     return;
   }
 
-  const match = dataUrl.match(/^data:audio\/[a-z0-9.+-]+;base64,([a-z0-9+/=]+)$/i);
-  if (!match) {
-    sendJson(res, 400, { error: "音频数据格式不正确。" });
-    return;
-  }
-
-  const buffer = Buffer.from(match[1], "base64");
-  if (buffer.length === 0 || buffer.length > 20 * 1024 * 1024) {
-    sendJson(res, 400, { error: "音频文件大小需在 20MB 以内。" });
+  if (buffer.length === 0) {
+    sendJson(res, 400, { error: "音频文件不能为空。" });
     return;
   }
 
@@ -865,7 +996,7 @@ async function handleAdminSongUpload(req, res) {
     : inferExtensionFromMime(mimeType);
   const id = generateUUID();
   const fileName = `${id}${ext}`;
-  require("fs").writeFileSync(require("path").join(SONGS_DIR, fileName), buffer);
+  writeFileAtomic(require("path").join(SONGS_DIR, fileName), buffer);
 
   const songs = loadSongs();
   songs.unshift({
@@ -895,8 +1026,9 @@ async function handleAdminSongDelete(req, res) {
 
   const { SONGS_DIR } = require("./constants");
   const filePath = getSongFilePath(song);
-  const safePath = require("path").normalize(filePath);
-  if (safePath.startsWith(SONGS_DIR) && require("fs").existsSync(safePath)) {
+  const songsRoot = require("path").resolve(SONGS_DIR);
+  const safePath = require("path").resolve(filePath);
+  if (safePath.startsWith(songsRoot + require("path").sep) && require("fs").existsSync(safePath)) {
     require("fs").unlinkSync(safePath);
   }
   const nextSongs = songs.filter((item) => item.id !== id);
@@ -922,9 +1054,10 @@ async function handleAdminSongAudio(req, res, pathname) {
   
   const { SONGS_DIR, MIME_TYPES } = require("./constants");
   const filePath = getSongFilePath(song);
-  const safePath = require("path").normalize(filePath);
+  const songsRoot = require("path").resolve(SONGS_DIR);
+  const safePath = require("path").resolve(filePath);
   
-  if (!safePath.startsWith(SONGS_DIR) || !require("fs").existsSync(safePath)) {
+  if ((safePath !== songsRoot && !safePath.startsWith(songsRoot + require("path").sep)) || !require("fs").existsSync(safePath)) {
     sendText(res, 404, "音频文件不存在");
     return;
   }
@@ -1109,7 +1242,7 @@ async function handleAdminConfigPut(req, res) {
   const updatesApiConfig = [
     "chatBaseUrl", "chatApiKey", "chatModel", "chatAvailableModels",
     "baseUrl", "apiKey", "model", "availableModels", "availableModelsText",
-    "imageBaseUrl", "imageApiKey", "imageModel", "imageAvailableModels", "imageSize",
+    "imageBaseUrl", "imageApiKey", "imageModel", "imageAvailableModels", "imageSize", "imageDailyLimit",
     "semanticBaseUrl", "semanticApiKey", "semanticModel", "semanticAvailableModels",
     "temperature", "maxTokens"
   ].some(hasField);
@@ -1150,6 +1283,7 @@ async function handleAdminConfigPut(req, res) {
     imageBaseUrl: hasField("imageBaseUrl") ? String(body.imageBaseUrl || "").trim() : config.imageBaseUrl || "",
     imageModel: hasField("imageModel") ? String(body.imageModel || "").trim() : config.imageModel || "",
     imageAvailableModels: imageManualModels,
+    imageDailyLimit: hasField("imageDailyLimit") ? Math.floor(Number(body.imageDailyLimit)) : normalizeImageDailyLimit(config.imageDailyLimit),
     semanticBaseUrl: hasField("semanticBaseUrl") ? String(body.semanticBaseUrl || "").trim() : config.semanticBaseUrl || config.chatBaseUrl || config.baseUrl || "",
     semanticModel: hasField("semanticModel") ? String(body.semanticModel || "").trim() : config.semanticModel || config.chatModel || config.model || "",
     semanticAvailableModels: semanticManualModels,
@@ -1208,6 +1342,11 @@ async function handleAdminConfigPut(req, res) {
     return;
   }
 
+  if (hasField("imageDailyLimit") && (!Number.isInteger(nextConfig.imageDailyLimit) || nextConfig.imageDailyLimit < 1 || nextConfig.imageDailyLimit > IMAGE_DAILY_LIMIT_MAX)) {
+    sendJson(res, 400, { error: `图片每日公共额度需要填写 1 到 ${IMAGE_DAILY_LIMIT_MAX} 之间的整数。` });
+    return;
+  }
+
   if (updatesSiteConfig && !nextConfig.systemPrompt) {
     sendJson(res, 400, { error: "系统提示词不能为空。" });
     return;
@@ -1224,7 +1363,13 @@ async function handleAdminConfigPut(req, res) {
   }
 
   saveConfig(stripPlainSecrets(nextConfig));
-  sendJson(res, 200, { ok: true, config: sanitizeAdminConfig(nextConfig) });
+  sendJson(res, 200, {
+    ok: true,
+    config: {
+      ...sanitizeAdminConfig(nextConfig),
+      imageDailyUsage: getImageDailyUsageSnapshot(nextConfig)
+    }
+  });
 }
 
 async function handleAdminStats(req, res) {

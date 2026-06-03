@@ -38,15 +38,50 @@ function decryptSecret(payload) {
 }
 
 function hashPassword(password) {
+  const salt = crypto.randomBytes(16);
+  const derived = crypto.scryptSync(String(password), salt, 64);
+  return `scrypt:${salt.toString("base64")}:${derived.toString("base64")}`;
+}
+
+function hashPasswordLegacy(password) {
   return crypto.createHash("sha256").update(password).digest("hex");
+}
+
+function hashStableId(value) {
+  return crypto.createHash("sha256").update(String(value)).digest("hex");
+}
+
+function verifyPassword(password, storedHash) {
+  const value = String(storedHash || "");
+  if (!value) return false;
+
+  if (value.startsWith("scrypt:")) {
+    const [, saltText, keyText] = value.split(":");
+    if (!saltText || !keyText) return false;
+    try {
+      const salt = Buffer.from(saltText, "base64");
+      const expected = Buffer.from(keyText, "base64");
+      const actual = crypto.scryptSync(String(password), salt, expected.length);
+      return expected.length > 0 &&
+        actual.length === expected.length &&
+        crypto.timingSafeEqual(actual, expected);
+    } catch {
+      return false;
+    }
+  }
+
+  const legacyHash = value.startsWith("sha256:") ? value.slice(7) : value;
+  if (!/^[a-f0-9]{64}$/i.test(legacyHash)) return false;
+  const actual = Buffer.from(hashPasswordLegacy(password), "hex");
+  const expected = Buffer.from(legacyHash, "hex");
+  return crypto.timingSafeEqual(actual, expected);
 }
 
 function generateAdminToken(password, adminPasswordHash, ttlMs) {
   if (!adminPasswordHash) {
     return null;
   }
-  const inputHash = hashPassword(password);
-  if (inputHash !== adminPasswordHash) {
+  if (!verifyPassword(password, adminPasswordHash)) {
     return null;
   }
   const expiresAt = Date.now() + ttlMs;
@@ -63,6 +98,9 @@ function verifyAdminToken(token) {
   const parts = token.split(".");
   if (parts.length !== 2) return false;
   const [expiresAtStr, signature] = parts;
+  if (!/^\d{10,16}$/.test(expiresAtStr) || !/^[a-f0-9]{64}$/i.test(signature)) {
+    return false;
+  }
   const expiresAt = Number(expiresAtStr);
   if (!Number.isFinite(expiresAt) || Date.now() > expiresAt) return false;
   const expectedSig = crypto
@@ -85,6 +123,8 @@ module.exports = {
   encryptSecret,
   decryptSecret,
   hashPassword,
+  hashStableId,
+  verifyPassword,
   generateAdminToken,
   verifyAdminToken,
   generateUUID

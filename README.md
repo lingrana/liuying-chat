@@ -52,6 +52,9 @@ npm install
 
 # 启动服务
 npm start
+
+# 本地语法检查
+npm run check
 ```
 
 访问：
@@ -68,6 +71,7 @@ npm start
 | `HOST` | `127.0.0.1` | 监听地址 |
 | `PORT` | `3200` | 监听端口 |
 | `CONFIG_SECRET` | 项目根目录路径 | API Key 加密密钥，部署后务必固定 |
+| `TRUST_PROXY` | `false` | 是否信任代理转发的真实 IP；本地/内网代理会自动信任 |
 
 ```bash
 HOST=0.0.0.0 PORT=3200 CONFIG_SECRET=your-random-secret npm start

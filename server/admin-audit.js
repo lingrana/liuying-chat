@@ -1,6 +1,12 @@
 const { CHAT_RETENTION_MS } = require("./constants");
 const { loadTokenUsageEvents, saveTokenUsageEvents, setTokenUsageEvents, getTokenUsageEvents } = require("./token-usage");
-const { listPersistentUserStores, loadPersistentUserStore, savePersistentUserStore, deletePersistentUserStore } = require("./users");
+const {
+  listPersistentUserStores,
+  loadPersistentUserStore,
+  savePersistentUserStore,
+  deletePersistentUserStore,
+  findPersistentUserStoreBySessionId
+} = require("./users");
 
 function getAdminConversationAudit() {
   const now = Date.now();
@@ -12,6 +18,7 @@ function getAdminConversationAudit() {
     totalCompletion: 0,
     totalTokens: 0,
     requests: 0,
+    latestAt: 0,
     tokenEvents: [],
     sessions: [],
     conversations: []
@@ -30,6 +37,7 @@ function getAdminConversationAudit() {
     bucket.totalCompletion += Number(event.completionTokens) || 0;
     bucket.totalTokens += Number(event.totalTokens) || 0;
     bucket.requests += 1;
+    bucket.latestAt = Math.max(bucket.latestAt, event.createdAt || 0);
     bucket.tokenEvents.push({
       id: event.id,
       type: event.type,
@@ -87,6 +95,11 @@ function getAdminConversationAudit() {
       userKey,
       sessionId: userStore.sessionId || ""
     })));
+    bucket.latestAt = Math.max(
+      bucket.latestAt,
+      sessionRecord.updatedAt || 0,
+      ...sessionRecord.conversations.map((conversation) => conversation.updatedAt || 0)
+    );
   }
 
   return {
@@ -94,6 +107,9 @@ function getAdminConversationAudit() {
     items: [...byIp.values()]
       .map((item) => ({
         ...item,
+        sessionCount: item.sessions.length,
+        conversationCount: item.conversations.length,
+        tokenEventCount: item.tokenEvents.length,
         tokenEvents: item.tokenEvents.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)),
         sessions: item.sessions.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)),
         conversations: item.conversations.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))

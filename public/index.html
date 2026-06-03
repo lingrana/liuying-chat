@@ -528,7 +528,8 @@
     }
 
     .session-panel,
-    .avatar-panel {
+    .avatar-panel,
+    .custom-api-panel {
       position: absolute;
       top: 72px;
       right: 2rem;
@@ -546,19 +547,22 @@
     }
 
     .session-panel.open,
-    .avatar-panel.open {
+    .avatar-panel.open,
+    .custom-api-panel.open {
       display: grid;
     }
 
     .session-panel h3,
-    .avatar-panel h3 {
+    .avatar-panel h3,
+    .custom-api-panel h3 {
       font-size: 0.8rem;
       font-weight: 600;
       color: var(--text);
     }
 
     .session-panel p,
-    .avatar-panel p {
+    .avatar-panel p,
+    .custom-api-panel p {
       font-size: 0.68rem;
       line-height: 1.65;
       color: var(--text-dim);
@@ -579,7 +583,9 @@
 
     .session-input,
     .session-panel textarea,
-    .avatar-panel textarea {
+    .avatar-panel textarea,
+    .custom-api-panel textarea,
+    .custom-api-panel select {
       width: 100%;
       background: rgba(46,168,122,0.03);
       border: 1px solid var(--border);
@@ -593,7 +599,9 @@
 
     .session-input:focus,
     .session-panel textarea:focus,
-    .avatar-panel textarea:focus {
+    .avatar-panel textarea:focus,
+    .custom-api-panel textarea:focus,
+    .custom-api-panel select:focus {
       border-color: var(--accent-dim);
       box-shadow: 0 0 0 3px rgba(46,168,122,0.1);
     }
@@ -1544,7 +1552,8 @@
       .voice-wave span { width: 2px; height: 4px; }
       .voice-duration { font-size: 0.52rem; }
       .session-panel,
-      .avatar-panel {
+      .avatar-panel,
+      .custom-api-panel {
         top: 58px;
         right: 0.85rem;
         left: 0.85rem;
@@ -1553,7 +1562,8 @@
         padding: 0.8rem;
       }
       .session-panel h3,
-      .avatar-panel h3 { font-size: 0.75rem; }
+      .avatar-panel h3,
+      .custom-api-panel h3 { font-size: 0.75rem; }
       .session-btn { 
         min-height: 38px; 
         padding: 0.6rem 0.9rem; 
@@ -1677,7 +1687,8 @@
         font-size: 0.8rem; 
       }
       .session-panel,
-      .avatar-panel {
+      .avatar-panel,
+      .custom-api-panel {
         right: 0.65rem;
         left: 0.65rem;
         padding: 0.65rem;
@@ -1759,6 +1770,9 @@
           </div>
           <span class="chip accent-chip" id="modelChip">模型读取中</span>
           <span class="chip" id="visitorCount">在线 0 人</span>
+          <button class="icon-btn" id="toggleCustomApiPanelButton" type="button" title="自定义图片 API">
+            <svg viewBox="0 0 24 24"><path d="M12 20v-6"/><path d="M12 10V4"/><path d="M6 14h12"/><path d="M8 4h8a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z"/><path d="M8 14h8a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2v-2a2 2 0 0 1 2-2Z"/></svg>
+          </button>
           <button class="icon-btn" id="toggleSessionPanelButton" type="button" title="会话管理">
             <svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
           </button>
@@ -1782,6 +1796,45 @@
           </div>
 
           <div class="session-status" id="panelStatus"></div>
+        </aside>
+
+        <aside class="custom-api-panel" id="customApiPanel">
+          <div class="session-block">
+            <h3>自定义图片 API</h3>
+            <p>只用于当前页面的图片生成请求，刷新或关闭页面后不会保存。</p>
+          </div>
+
+          <div class="session-block">
+            <span class="mini-label">Base URL</span>
+            <input type="url" id="customImageBaseUrlInput" class="session-input" placeholder="https://api.openai.com/v1">
+          </div>
+
+          <div class="session-block">
+            <span class="mini-label">API Key</span>
+            <input type="password" id="customImageApiKeyInput" class="session-input" placeholder="sk-...">
+          </div>
+
+          <div class="session-block">
+            <span class="mini-label">模型</span>
+            <input type="text" id="customImageModelInput" class="session-input" placeholder="gpt-image-1">
+          </div>
+
+          <div class="session-block">
+            <span class="mini-label">尺寸</span>
+            <select id="customImageSizeInput" class="session-input">
+              <option value="1024x1024">1024x1024</option>
+              <option value="1024x1536">1024x1536</option>
+              <option value="1536x1024">1536x1024</option>
+              <option value="auto">auto</option>
+            </select>
+          </div>
+
+          <div class="session-row">
+            <button class="session-btn" id="clearCustomApiButton" type="button">清空</button>
+            <button class="session-btn primary" id="closeCustomApiPanelButton" type="button">完成</button>
+          </div>
+
+          <div class="session-status" id="customApiStatus"></div>
         </aside>
 
         <aside class="avatar-panel" id="avatarPanel">

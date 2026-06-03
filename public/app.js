@@ -14,6 +14,15 @@ const toggleSessionPanelButton = document.getElementById("toggleSessionPanelButt
 const sessionPanel = document.getElementById("sessionPanel");
 const sessionModeText = document.getElementById("sessionModeText");
 const conversationList = document.getElementById("conversationList");
+const toggleCustomApiPanelButton = document.getElementById("toggleCustomApiPanelButton");
+const customApiPanel = document.getElementById("customApiPanel");
+const customImageBaseUrlInput = document.getElementById("customImageBaseUrlInput");
+const customImageApiKeyInput = document.getElementById("customImageApiKeyInput");
+const customImageModelInput = document.getElementById("customImageModelInput");
+const customImageSizeInput = document.getElementById("customImageSizeInput");
+const clearCustomApiButton = document.getElementById("clearCustomApiButton");
+const closeCustomApiPanelButton = document.getElementById("closeCustomApiPanelButton");
+const customApiStatus = document.getElementById("customApiStatus");
 const openNoticeButton = document.getElementById("openNoticeButton");
 const noticeModal = document.getElementById("noticeModal");
 const noticeTitle = document.getElementById("noticeTitle");
@@ -54,6 +63,7 @@ function setSessionPanelOpen(open) {
   sessionPanel.classList.toggle("open", open);
   if (open) {
     avatarPanel.classList.remove("open");
+    customApiPanel.classList.remove("open");
   }
 }
 
@@ -61,6 +71,7 @@ function setAvatarPanelOpen(open) {
   avatarPanel.classList.toggle("open", open);
   if (open) {
     sessionPanel.classList.remove("open");
+    customApiPanel.classList.remove("open");
     avatarPreview.src = userAvatarUrl;
     avatarUrlInput.value = "";
     avatarFileText.textContent = "未选择文件";
@@ -68,10 +79,61 @@ function setAvatarPanelOpen(open) {
   }
 }
 
+function setCustomApiPanelOpen(open) {
+  customApiPanel.classList.toggle("open", open);
+  if (open) {
+    sessionPanel.classList.remove("open");
+    avatarPanel.classList.remove("open");
+    updateCustomApiStatus();
+  }
+}
+
 function setAvatarStatus(text, isError = false) {
   if (!avatarStatus) return;
   avatarStatus.textContent = text || "";
   avatarStatus.style.color = isError ? "#d44" : "var(--accent)";
+}
+
+function setCustomApiStatus(text, isError = false) {
+  if (!customApiStatus) return;
+  customApiStatus.textContent = text || "";
+  customApiStatus.style.color = isError ? "#d44" : "var(--accent)";
+}
+
+function getCustomImageApiPayload() {
+  const baseUrl = customImageBaseUrlInput?.value.trim() || "";
+  const apiKey = customImageApiKeyInput?.value.trim() || "";
+  const model = customImageModelInput?.value.trim() || "";
+  if (!baseUrl || !model) return null;
+  return {
+    baseUrl,
+    apiKey,
+    model,
+    size: customImageSizeInput?.value || "1024x1024"
+  };
+}
+
+function updateCustomApiStatus() {
+  const baseUrl = customImageBaseUrlInput?.value.trim() || "";
+  const apiKey = customImageApiKeyInput?.value.trim() || "";
+  const model = customImageModelInput?.value.trim() || "";
+  if (!baseUrl && !apiKey && !model) {
+    setCustomApiStatus("");
+    return;
+  }
+  if (!baseUrl || !model) {
+    setCustomApiStatus("需要填写 Base URL 和模型名称后才会启用。", true);
+    return;
+  }
+  setCustomApiStatus("图片生成会优先使用这组临时 API。");
+}
+
+function clearCustomApiFields() {
+  if (customImageBaseUrlInput) customImageBaseUrlInput.value = "";
+  if (customImageApiKeyInput) customImageApiKeyInput.value = "";
+  if (customImageModelInput) customImageModelInput.value = "";
+  if (customImageSizeInput) customImageSizeInput.value = "1024x1024";
+  setCustomApiStatus("");
 }
 
 function setNoticeModalOpen(open, remember = true) {
@@ -666,12 +728,18 @@ async function sendMessage() {
   scrollToBottom();
 
   try {
+    const requestBody = {
+      conversationId: activeConversationId,
+      message: content
+    };
+    const customImageApi = getCustomImageApiPayload();
+    if (customImageApi) {
+      requestBody.customImageApi = customImageApi;
+    }
+
     const data = await fetchJson("/api/chat", {
       method: "POST",
-      body: JSON.stringify({
-        conversationId: activeConversationId,
-        message: content
-      })
+      body: JSON.stringify(requestBody)
     });
 
     typingRow.classList.add("hidden");
@@ -740,6 +808,11 @@ function bindEvents() {
       setAvatarPanelOpen(!avatarPanel.classList.contains("open"));
     });
   }
+  if (toggleCustomApiPanelButton) {
+    toggleCustomApiPanelButton.addEventListener("click", () => {
+      setCustomApiPanelOpen(!customApiPanel.classList.contains("open"));
+    });
+  }
 
   // 点击空白处关闭面板
   document.addEventListener("click", (e) => {
@@ -748,6 +821,12 @@ function bindEvents() {
         e.target !== toggleSessionPanelButton &&
         !toggleSessionPanelButton.contains(e.target)) {
       setSessionPanelOpen(false);
+    }
+    if (customApiPanel.classList.contains("open") &&
+        !customApiPanel.contains(e.target) &&
+        e.target !== toggleCustomApiPanelButton &&
+        !toggleCustomApiPanelButton.contains(e.target)) {
+      setCustomApiPanelOpen(false);
     }
     if (avatarPanel.classList.contains("open") && 
         !avatarPanel.contains(e.target) && 
@@ -761,6 +840,20 @@ function bindEvents() {
       setAvatarPanelOpen(false);
     });
   }
+  if (closeCustomApiPanelButton) {
+    closeCustomApiPanelButton.addEventListener("click", () => {
+      setCustomApiPanelOpen(false);
+    });
+  }
+  if (clearCustomApiButton) {
+    clearCustomApiButton.addEventListener("click", clearCustomApiFields);
+  }
+  [customImageBaseUrlInput, customImageApiKeyInput, customImageModelInput, customImageSizeInput]
+    .filter(Boolean)
+    .forEach((input) => {
+      input.addEventListener("input", updateCustomApiStatus);
+      input.addEventListener("change", updateCustomApiStatus);
+    });
   if (avatarFileInput) {
     avatarFileInput.addEventListener("change", () => {
       const file = avatarFileInput.files?.[0];

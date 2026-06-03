@@ -1,7 +1,10 @@
 const fs = require("fs");
 const path = require("path");
-const { USERS_DIR, CHAT_RETENTION_MS } = require("./constants");
-const { generateUUID, hashPassword } = require("./crypto");
+const { USERS_DIR, CHAT_RETENTION_MS, USER_CLEANUP_INTERVAL_MS } = require("./constants");
+const { generateUUID, hashStableId } = require("./crypto");
+const { writeJsonAtomic } = require("./file-store");
+
+let lastPersistentCleanupAt = 0;
 
 function getUserFilePath(userKey) {
   return path.join(USERS_DIR, `${userKey}.json`);
@@ -86,11 +89,7 @@ function savePersistentUserStore(userKey, userStore) {
     return;
   }
   normalized.conversations = normalized.conversations.map(normalizeConversationRecord).filter(Boolean);
-  fs.writeFileSync(
-    getUserFilePath(userKey),
-    JSON.stringify(normalized, null, 2),
-    "utf8"
-  );
+  writeJsonAtomic(getUserFilePath(userKey), normalized);
 }
 
 function deletePersistentUserStore(userKey) {
@@ -127,11 +126,11 @@ function findPersistentUserStoreBySessionId(sessionId) {
 }
 
 function getSessionUserKey(sessionId) {
-  return hashPassword(`session:${String(sessionId || "").trim()}`);
+  return hashStableId(`session:${String(sessionId || "").trim()}`);
 }
 
 function getIpUserKey(ip) {
-  return hashPassword(`ip:${String(ip || "unknown").trim()}`);
+  return hashStableId(`ip:${String(ip || "unknown").trim()}`);
 }
 
 function createConversation({ title = "新对话", now = Date.now() } = {}) {
@@ -167,8 +166,14 @@ function createUserStore({ persistent = true, sessionId, ip = "" } = {}) {
   };
 }
 
-function cleanupExpiredPersistentUsers() {
+function cleanupExpiredPersistentUsers(options = {}) {
   const now = Date.now();
+  const force = Boolean(options.force);
+  if (!force && now - lastPersistentCleanupAt < USER_CLEANUP_INTERVAL_MS) {
+    return;
+  }
+  lastPersistentCleanupAt = now;
+
   if (!fs.existsSync(USERS_DIR)) {
     return;
   }

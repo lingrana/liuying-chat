@@ -1,13 +1,44 @@
 const fs = require("fs");
-const { CONFIG_PATH, DATA_DIR, USERS_DIR, SONGS_DIR, GENERATED_IMAGES_DIR, SONGS_INDEX_PATH, TOKEN_USAGE_PATH } = require("./constants");
-const { encryptSecret, decryptSecret } = require("./crypto");
+const { CONFIG_PATH, DATA_DIR, USERS_DIR, SONGS_DIR, GENERATED_IMAGES_DIR, SONGS_INDEX_PATH, TOKEN_USAGE_PATH, IMAGE_DAILY_USAGE_PATH } = require("./constants");
+const { encryptSecret, decryptSecret, hashPassword } = require("./crypto");
+const { writeFileAtomic, writeJsonAtomic } = require("./file-store");
+const { normalizeImageDailyLimit } = require("./image-limit");
+
+function createDefaultConfig() {
+  const adminPassword = String(process.env.ADMIN_PASSWORD || "").trim();
+  return {
+    siteName: "流萤",
+    siteSubtitle: "会找到的，属于我的梦……",
+    assistantAvatarPath: "public/ly.png",
+    userAvatarPath: "public/ly.png",
+    chatBaseUrl: "",
+    chatModel: "",
+    chatAvailableModels: [],
+    imageBaseUrl: "",
+    imageModel: "",
+    imageAvailableModels: [],
+    imageSize: "1024x1024",
+    imageDailyLimit: 50,
+    semanticBaseUrl: "",
+    semanticModel: "",
+    semanticAvailableModels: [],
+    temperature: 0.8,
+    maxTokens: 800,
+    systemPrompt: "你是流萤。请用自然、克制、亲近的语气和用户对话。",
+    announcementEnabled: false,
+    announcementTitle: "公告",
+    announcementHtml: "",
+    cacheMaxSize: 500,
+    adminPasswordHash: adminPassword ? hashPassword(adminPassword) : ""
+  };
+}
 
 function ensureDataFiles() {
   if (!fs.existsSync(DATA_DIR)) {
     fs.mkdirSync(DATA_DIR, { recursive: true });
   }
   if (!fs.existsSync(CONFIG_PATH)) {
-    throw new Error("Missing data/config.json");
+    writeJsonAtomic(CONFIG_PATH, createDefaultConfig());
   }
   if (!fs.existsSync(USERS_DIR)) {
     fs.mkdirSync(USERS_DIR, { recursive: true });
@@ -19,10 +50,13 @@ function ensureDataFiles() {
     fs.mkdirSync(GENERATED_IMAGES_DIR, { recursive: true });
   }
   if (!fs.existsSync(SONGS_INDEX_PATH)) {
-    fs.writeFileSync(SONGS_INDEX_PATH, "[]", "utf8");
+    writeFileAtomic(SONGS_INDEX_PATH, "[]", "utf8");
   }
   if (!fs.existsSync(TOKEN_USAGE_PATH)) {
-    fs.writeFileSync(TOKEN_USAGE_PATH, "[]", "utf8");
+    writeFileAtomic(TOKEN_USAGE_PATH, "[]", "utf8");
+  }
+  if (!fs.existsSync(IMAGE_DAILY_USAGE_PATH)) {
+    writeJsonAtomic(IMAGE_DAILY_USAGE_PATH, { date: "", count: 0 });
   }
 }
 
@@ -88,6 +122,7 @@ function normalizeConfig(config) {
     : "公告";
   nextConfig.announcementHtml = typeof nextConfig.announcementHtml === "string" ? nextConfig.announcementHtml : "";
   nextConfig.cacheMaxSize = Number(nextConfig.cacheMaxSize) || 500;
+  nextConfig.imageDailyLimit = normalizeImageDailyLimit(nextConfig.imageDailyLimit);
   return nextConfig;
 }
 
@@ -100,7 +135,7 @@ function loadConfig() {
 }
 
 function saveConfig(config) {
-  fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2), "utf8");
+  writeJsonAtomic(CONFIG_PATH, config);
 }
 
 function stripPlainSecrets(config) {
@@ -144,5 +179,6 @@ module.exports = {
   saveConfig,
   stripPlainSecrets,
   sanitizeAdminConfig,
-  normalizeConfig
+  normalizeConfig,
+  createDefaultConfig
 };

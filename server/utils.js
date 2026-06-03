@@ -1,29 +1,120 @@
 const path = require("path");
-const { MAX_JSON_BODY_BYTES, MIME_TYPES } = require("./constants");
+const { MAX_JSON_BODY_BYTES, MIME_TYPES, TRUST_PROXY } = require("./constants");
 
-function parseBody(req) {
+function readRequestBody(req, maxBytes = MAX_JSON_BODY_BYTES) {
   return new Promise((resolve, reject) => {
-    let raw = "";
+    const chunks = [];
+    let total = 0;
+    let rejected = false;
     req.on("data", (chunk) => {
-      raw += chunk;
-      if (raw.length > MAX_JSON_BODY_BYTES) {
+      total += chunk.length;
+      if (total > maxBytes) {
+        rejected = true;
         reject(new Error("Request body too large"));
         req.destroy();
-      }
-    });
-    req.on("end", () => {
-      if (!raw) {
-        resolve({});
         return;
       }
-      try {
-        resolve(JSON.parse(raw));
-      } catch {
-        reject(new Error("Invalid JSON body"));
-      }
+      chunks.push(chunk);
+    });
+    req.on("end", () => {
+      if (rejected) return;
+      resolve(Buffer.concat(chunks, total));
     });
     req.on("error", reject);
   });
+}
+
+function parseBody(req, maxBytes = MAX_JSON_BODY_BYTES) {
+  return readRequestBody(req, maxBytes).then((buffer) => {
+    const raw = buffer.toString("utf8");
+    if (!raw) {
+      return {};
+    }
+    try {
+      return JSON.parse(raw);
+    } catch {
+      throw new Error("Invalid JSON body");
+    }
+  });
+}
+
+function parseContentDisposition(value) {
+  const result = {};
+  for (const part of String(value || "").split(";")) {
+    const [rawKey, ...rawValue] = part.trim().split("=");
+    if (!rawKey) continue;
+    const key = rawKey.toLowerCase();
+    let nextValue = rawValue.join("=");
+    if (nextValue.startsWith('"') && nextValue.endsWith('"')) {
+      nextValue = nextValue.slice(1, -1);
+    }
+    result[key] = nextValue.replace(/\\"/g, '"');
+  }
+  return result;
+}
+
+function getMultipartBoundary(contentType) {
+  const match = String(contentType || "").match(/(?:^|;)\s*boundary=(?:"([^"]+)"|([^;]+))/i);
+  return match ? (match[1] || match[2] || "").trim() : "";
+}
+
+async function parseMultipartForm(req, maxBytes = MAX_JSON_BODY_BYTES) {
+  const boundary = getMultipartBoundary(req.headers["content-type"] || "");
+  if (!boundary) {
+    throw new Error("Missing multipart boundary");
+  }
+
+  const body = await readRequestBody(req, maxBytes);
+  const boundaryBuffer = Buffer.from(`--${boundary}`);
+  const headerSeparator = Buffer.from("\r\n\r\n");
+  const fields = {};
+  const files = {};
+  let offset = 0;
+
+  while (offset < body.length) {
+    const boundaryIndex = body.indexOf(boundaryBuffer, offset);
+    if (boundaryIndex === -1) break;
+    let partStart = boundaryIndex + boundaryBuffer.length;
+    if (body[partStart] === 45 && body[partStart + 1] === 45) break;
+    if (body[partStart] === 13 && body[partStart + 1] === 10) {
+      partStart += 2;
+    }
+
+    const headerEnd = body.indexOf(headerSeparator, partStart);
+    if (headerEnd === -1) break;
+    const headersText = body.slice(partStart, headerEnd).toString("utf8");
+    const headers = {};
+    for (const line of headersText.split(/\r\n/)) {
+      const colon = line.indexOf(":");
+      if (colon === -1) continue;
+      headers[line.slice(0, colon).trim().toLowerCase()] = line.slice(colon + 1).trim();
+    }
+
+    const contentStart = headerEnd + headerSeparator.length;
+    const nextBoundaryIndex = body.indexOf(boundaryBuffer, contentStart);
+    if (nextBoundaryIndex === -1) break;
+    let contentEnd = nextBoundaryIndex;
+    if (body[contentEnd - 2] === 13 && body[contentEnd - 1] === 10) {
+      contentEnd -= 2;
+    }
+    const content = body.slice(contentStart, contentEnd);
+    const disposition = parseContentDisposition(headers["content-disposition"]);
+    const name = disposition.name || "";
+    if (name) {
+      if (disposition.filename !== undefined) {
+        files[name] = {
+          fileName: disposition.filename,
+          mimeType: headers["content-type"] || "application/octet-stream",
+          buffer: content
+        };
+      } else {
+        fields[name] = content.toString("utf8");
+      }
+    }
+    offset = nextBoundaryIndex;
+  }
+
+  return { fields, files };
 }
 
 function sendJson(res, statusCode, payload) {
@@ -59,10 +150,26 @@ function sendFile(res, filePath) {
   });
 }
 
+function isPrivateProxyAddress(remoteAddress) {
+  const value = String(remoteAddress || "").replace(/^::ffff:/, "");
+  return value === "127.0.0.1" ||
+    value === "::1" ||
+    value === "localhost" ||
+    value.startsWith("10.") ||
+    value.startsWith("192.168.") ||
+    /^172\.(1[6-9]|2\d|3[0-1])\./.test(value);
+}
+
 function getClientIp(req) {
-  const forwarded = req.headers["x-forwarded-for"];
+  const remoteAddress = req.socket.remoteAddress || "";
+  const shouldTrustProxy = TRUST_PROXY || isPrivateProxyAddress(remoteAddress);
+  const forwarded = shouldTrustProxy ? req.headers["x-forwarded-for"] : "";
   if (typeof forwarded === "string" && forwarded.trim()) {
     return forwarded.split(",")[0].trim();
+  }
+  const realIp = shouldTrustProxy ? req.headers["x-real-ip"] : "";
+  if (typeof realIp === "string" && realIp.trim()) {
+    return realIp.trim();
   }
   return req.socket.remoteAddress || "unknown";
 }
@@ -133,7 +240,9 @@ function summarizeApiError(payload, statusCode) {
 }
 
 module.exports = {
+  readRequestBody,
   parseBody,
+  parseMultipartForm,
   sendJson,
   sendText,
   sendFile,

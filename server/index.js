@@ -6,7 +6,7 @@ const { setCacheMaxSize } = require("./cache");
 const { loadTokenUsageEvents, saveTokenUsageEvents } = require("./token-usage");
 const { cleanupExpiredPersistentUsers } = require("./users");
 const { cleanupVisitors } = require("./visitors");
-const { sendText, sendFile } = require("./utils");
+const { sendText, sendFile, parseBody, sendJson, getClientIp } = require("./utils");
 const {
   publicConfig,
   handleGeneratedImage,
@@ -49,7 +49,44 @@ const {
   generateAdminToken,
   verifyAdminToken
 } = require("./routes");
-const { parseBody, sendJson } = require("./utils");
+const ADMIN_LOGIN_WINDOW_MS = 15 * 60 * 1000;
+const ADMIN_LOGIN_LOCK_MS = 10 * 60 * 1000;
+const ADMIN_LOGIN_MAX_FAILURES = 5;
+const adminLoginAttempts = new Map();
+
+function getStaticCacheControl(filePath) {
+  const ext = path.extname(filePath).toLowerCase();
+  if (ext === ".html") return "no-store";
+  return "public, max-age=3600, stale-while-revalidate=86400";
+}
+
+function getAdminLoginState(key) {
+  const now = Date.now();
+  const current = adminLoginAttempts.get(key);
+  if (!current || now - current.firstAt > ADMIN_LOGIN_WINDOW_MS) {
+    const next = { firstAt: now, failures: 0, lockedUntil: 0 };
+    adminLoginAttempts.set(key, next);
+    return next;
+  }
+  return current;
+}
+
+function getAdminLoginRetryMs(key) {
+  const state = getAdminLoginState(key);
+  return Math.max(0, state.lockedUntil - Date.now());
+}
+
+function recordAdminLoginFailure(key) {
+  const state = getAdminLoginState(key);
+  state.failures += 1;
+  if (state.failures >= ADMIN_LOGIN_MAX_FAILURES) {
+    state.lockedUntil = Date.now() + ADMIN_LOGIN_LOCK_MS;
+  }
+}
+
+function clearAdminLoginFailures(key) {
+  adminLoginAttempts.delete(key);
+}
 
 function serveStatic(req, res) {
   let pathname = decodeURIComponent(new URL(req.url, `http://${req.headers.host}`).pathname);
@@ -57,11 +94,12 @@ function serveStatic(req, res) {
     pathname = "/index.html";
   }
 
-  const safePath = path.normalize(path.join(PUBLIC_DIR, pathname));
-  if (!safePath.startsWith(PUBLIC_DIR)) {
-    sendText(res, 403, "Forbidden");
-    return;
-  }
+    const publicRoot = path.resolve(PUBLIC_DIR);
+    const safePath = path.resolve(publicRoot, pathname.replace(/^[/\\]+/, ""));
+    if (safePath !== publicRoot && !safePath.startsWith(publicRoot + path.sep)) {
+      sendText(res, 403, "Forbidden");
+      return;
+    }
 
   const fs = require("fs");
   fs.stat(safePath, (error, stats) => {
@@ -74,7 +112,7 @@ function serveStatic(req, res) {
     const contentType = MIME_TYPES[ext] || "application/octet-stream";
     res.writeHead(200, {
       "Content-Type": contentType,
-      "Cache-Control": "no-store"
+      "Cache-Control": getStaticCacheControl(safePath)
     });
     fs.createReadStream(safePath).pipe(res);
   });
@@ -160,13 +198,23 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === "POST" && url.pathname === "/api/admin/login") {
+      const loginKey = getClientIp(req);
+      const retryMs = getAdminLoginRetryMs(loginKey);
+      if (retryMs > 0) {
+        sendJson(res, 429, {
+          error: `登录失败次数过多，请 ${Math.ceil(retryMs / 1000)} 秒后再试。`
+        });
+        return;
+      }
       const body = await parseBody(req);
       const password = typeof body.password === "string" ? body.password : "";
       const token = generateAdminToken(password);
       if (!token) {
+        recordAdminLoginFailure(loginKey);
         sendJson(res, 401, { error: "密码错误或管理员密码未设置。" });
         return;
       }
+      clearAdminLoginFailures(loginKey);
       sendJson(res, 200, { ok: true, token });
       return;
     }
@@ -319,19 +367,27 @@ const server = http.createServer(async (req, res) => {
 
     serveStatic(req, res);
   } catch (error) {
+    if (error?.message === "Request body too large") {
+      sendJson(res, 413, { error: "请求体过大。" });
+      return;
+    }
+    if (error?.message === "Invalid JSON body" || error?.message === "Missing multipart boundary") {
+      sendJson(res, 400, { error: error.message });
+      return;
+    }
     sendJson(res, 500, { error: error.message || "服务器错误。" });
   }
 });
 
 setInterval(() => {
   cleanupVisitors();
-  cleanupExpiredPersistentUsers();
+  cleanupExpiredPersistentUsers({ force: true });
   saveTokenUsageEvents();
 }, 10 * 60 * 1000).unref();
 
 ensureDataFiles();
 loadTokenUsageEvents();
-cleanupExpiredPersistentUsers();
+cleanupExpiredPersistentUsers({ force: true });
 
 const config = loadConfig();
 setCacheMaxSize(config.cacheMaxSize);

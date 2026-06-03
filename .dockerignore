@@ -1,0 +1,11 @@
+.git
+.github
+node_modules
+data
+*.log
+.env
+.env.local
+.vscode
+.idea
+server.out.log
+server.err.log

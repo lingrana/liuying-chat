@@ -9,6 +9,7 @@ const SONGS_DIR = path.join(DATA_DIR, "songs");
 const GENERATED_IMAGES_DIR = path.join(DATA_DIR, "generated-images");
 const SONGS_INDEX_PATH = path.join(SONGS_DIR, "songs.json");
 const TOKEN_USAGE_PATH = path.join(DATA_DIR, "token-usage.json");
+const IMAGE_DAILY_USAGE_PATH = path.join(DATA_DIR, "image-daily-usage.json");
 const DEFAULT_ASSISTANT_AVATAR = path.join(DATA_DIR, "lingran.png");
 const DEFAULT_USER_AVATAR = path.join(DATA_DIR, "lingran.png");
 
@@ -22,6 +23,10 @@ const ADMIN_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
 const IMAGE_GENERATION_COOLDOWN_MS = 5 * 60 * 1000;
 const MAX_JSON_BODY_BYTES = 30 * 1024 * 1024;
 const CACHE_TTL_MS = 60 * 60 * 1000;
+const USER_CLEANUP_INTERVAL_MS = 10 * 60 * 1000;
+const CHAT_API_TIMEOUT_MS = 120 * 1000;
+const MODEL_LIST_TIMEOUT_MS = 30 * 1000;
+const TRUST_PROXY = /^(1|true|yes|on)$/i.test(process.env.TRUST_PROXY || "");
 
 const MIME_TYPES = {
   ".html": "text/html; charset=utf-8",
@@ -53,6 +58,7 @@ module.exports = {
   GENERATED_IMAGES_DIR,
   SONGS_INDEX_PATH,
   TOKEN_USAGE_PATH,
+  IMAGE_DAILY_USAGE_PATH,
   DEFAULT_ASSISTANT_AVATAR,
   DEFAULT_USER_AVATAR,
   HOST,
@@ -65,5 +71,9 @@ module.exports = {
   IMAGE_GENERATION_COOLDOWN_MS,
   MAX_JSON_BODY_BYTES,
   CACHE_TTL_MS,
+  USER_CLEANUP_INTERVAL_MS,
+  CHAT_API_TIMEOUT_MS,
+  MODEL_LIST_TIMEOUT_MS,
+  TRUST_PROXY,
   MIME_TYPES
 };

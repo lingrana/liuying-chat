@@ -2,6 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const { SONGS_DIR, SONGS_INDEX_PATH } = require("./constants");
 const { normalizeSearchText } = require("./utils");
+const { writeJsonAtomic } = require("./file-store");
 
 function loadSongs() {
   try {
@@ -13,7 +14,7 @@ function loadSongs() {
 }
 
 function saveSongs(songs) {
-  fs.writeFileSync(SONGS_INDEX_PATH, JSON.stringify(songs, null, 2), "utf8");
+  writeJsonAtomic(SONGS_INDEX_PATH, songs);
 }
 
 function sanitizeSong(song) {

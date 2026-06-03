@@ -1696,6 +1696,11 @@
                 <span>图片模型</span>
                 <input id="imageModelInput" name="imageModel" type="text" placeholder="gpt-image-1">
               </label>
+              <label>
+                <span>每日公共生图额度</span>
+                <input id="imageDailyLimitInput" name="imageDailyLimit" type="number" min="1" step="1" placeholder="50">
+              </label>
+              <div id="imageDailyUsageHint" class="span-full" style="font-size:0.72rem;color:var(--text-dim);min-height:1.1rem;"></div>
               <label class="span-full">
                 <span>可用模型</span>
                 <div id="imageAvailableModelsList" class="model-select-list" role="listbox" aria-label="图片可用模型列表"></div>

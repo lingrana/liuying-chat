@@ -1,6 +1,7 @@
 const fs = require("fs");
 const { TOKEN_USAGE_PATH, CHAT_RETENTION_MS } = require("./constants");
 const { generateUUID } = require("./crypto");
+const { writeJsonAtomic } = require("./file-store");
 
 let tokenUsageEvents = [];
 
@@ -34,7 +35,7 @@ function saveTokenUsageEvents() {
   tokenUsageEvents = tokenUsageEvents
     .map(normalizeTokenUsageEvent)
     .filter((event) => event && event.createdAt >= cutoff);
-  fs.writeFileSync(TOKEN_USAGE_PATH, JSON.stringify(tokenUsageEvents, null, 2), "utf8");
+  writeJsonAtomic(TOKEN_USAGE_PATH, tokenUsageEvents);
 }
 
 function recordTokenUsage({ promptTokens, completionTokens, totalTokens, ip = "unknown", sessionId = "" }) {
