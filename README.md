@@ -1,11 +1,12 @@
-# 🔥 Firefly Chat
+# 💬 Lingrana Chat
 
-一个以《崩坏：星穹铁道》流萤为主题的 AI 聊天站点。
+一个支持多角色切换的 OpenAI 兼容 AI 聊天站点，当前内置流萤、芙宁娜、遐蝶等角色。
 
 <p align="center">
   <img src="https://img.shields.io/badge/Node.js-18+-339933?logo=node.js&logoColor=white" alt="Node.js">
   <img src="https://img.shields.io/badge/version-v1.0.1-brightgreen" alt="Version">
   <img src="https://img.shields.io/badge/License-MIT-blue" alt="License">
+  <img src="https://img.shields.io/badge/Multi--Character-enabled-8b6fd8" alt="Multi Character">
   <img src="https://img.shields.io/badge/OpenAI-Compatible-412991?logo=openai&logoColor=white" alt="OpenAI Compatible">
 </p>
 
@@ -21,8 +22,9 @@
 
 | 分类 | 功能 |
 |------|------|
-| 💬 聊天 | OpenAI 兼容对话、流式回复、会话管理、动态时间上下文 |
-| 🎨 图片 | 独立图片 API 配置、提示词生图 |
+| 💬 聊天 | 多角色切换、OpenAI 兼容对话、流式回复、会话管理、动态时间上下文 |
+| 🎭 角色 | 独立角色提示词、头像、立绘、主题色、开场白 |
+| 🎨 图片 | 独立图片 API 配置、按当前角色补充提示词生图 |
 | 🎵 歌曲 | 后台上传 AI 翻唱、聊天中提到歌名自动输出播放器 |
 | 👤 用户 | IP 隔离会话、头像上传/链接编辑 |
 | 📊 后台 | Token 统计、IP 审计、缓存管理、模型自动获取、连通测试 |
@@ -34,10 +36,10 @@
 <summary>点击展开</summary>
 
 **前台聊天**
-- 流萤主题界面、会话列表、头像编辑、歌曲播放器
+- 多角色主题界面、会话列表、头像编辑、歌曲播放器
 
 **后台管理**  
-- 仪表盘、Token 统计、IP 审计、API 配置、站点配置、歌曲曲库
+- 仪表盘、Token 统计、IP 审计、API 配置、站点配置、角色配置、歌曲曲库
 
 </details>
 
@@ -88,7 +90,7 @@ HOST=0.0.0.0 PORT=3200 CONFIG_SECRET=your-random-secret npm start
 - **Token 统计** — 对话/图片 Token 详情，支持 1d / 7d / 全部
 - **IP 审计** — 按 IP 查看消耗和对话，支持搜索、排序、分页
 - **API 配置** — 对话/图片 API 分开配置，自动获取模型，连通测试
-- **站点配置** — 标题、头像、系统提示词、管理密码、缓存
+- **站点配置** — 标题、默认角色、角色资料、管理密码、缓存
 - **歌曲曲库** — 上传 / 删除 / 预览 AI 翻唱
 
 ### 歌曲曲库
@@ -99,18 +101,18 @@ HOST=0.0.0.0 PORT=3200 CONFIG_SECRET=your-random-secret npm start
 
 ```
 data/
-├── config.json          # 站点配置（API Key 已加密）
+├── config.json          # 站点配置、角色配置（API Key 已加密）
 ├── users/               # 用户会话（按 IP 哈希）
 ├── songs/               # 歌曲文件及索引
 ├── token-usage.json     # Token 使用记录
-├── skills/              # 流萤角色资料
+├── skills/              # 角色资料素材
 └── lingran.png          # 默认头像
 ```
 
 ## 📁 项目结构
 
 ```
-firefly-chat/
+chat/
 ├── public/
 │   ├── index.html       # 前台聊天页
 │   ├── app.js           # 前台逻辑
@@ -152,8 +154,8 @@ CMD ["node", "server.js"]
 ```
 
 ```bash
-docker build -t firefly-chat .
-docker run -d -p 3200:3200 -e CONFIG_SECRET=your-secret firefly-chat
+docker build -t lingrana-chat .
+docker run -d -p 3200:3200 -e CONFIG_SECRET=your-secret lingrana-chat
 ```
 
 ## 🔧 生产部署
@@ -162,7 +164,7 @@ docker run -d -p 3200:3200 -e CONFIG_SECRET=your-secret firefly-chat
 
 ```bash
 # PM2
-pm2 start server.js --name firefly-chat
+pm2 start server.js --name lingrana-chat
 
 # 或直接
 HOST=0.0.0.0 PORT=3200 CONFIG_SECRET=your-secret node server.js
@@ -193,7 +195,9 @@ server {
 | guilings/firefly.skill | [GitHub](https://github.com/guilings/firefly.skill) |
 | HeartEase1/firefly-skill | [GitHub](https://github.com/HeartEase1/firefly-skill) |
 
-> ⚠️ 角色资料版权归原作者所有，仅供学习交流使用。感谢原作者的贡献。
+芙宁娜、遐蝶等其他角色为项目内置角色配置与公开资源适配。角色、图片和设定版权归对应作品及权利方所有，仅供学习交流使用。
+
+> ⚠️ 角色资料版权归原作者和对应权利方所有，仅供学习交流使用。感谢原作者的贡献。
 
 ## ⚠️ 注意事项
 
