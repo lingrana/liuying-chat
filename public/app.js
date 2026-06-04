@@ -259,8 +259,12 @@ function autoResize() {
   messageInput.style.height = `${Math.min(messageInput.scrollHeight, 100)}px`;
 }
 
-function scrollToBottom() {
-  chatBody.scrollTop = chatBody.scrollHeight;
+function scrollToBottom(smooth = false) {
+  if (smooth) {
+    chatBody.scrollTo({ top: chatBody.scrollHeight, behavior: "smooth" });
+  } else {
+    chatBody.scrollTop = chatBody.scrollHeight;
+  }
 }
 
 let currentVoiceAudio = null;
@@ -357,15 +361,44 @@ function preloadImage(src) {
   });
 }
 
-function playCharacterSwitchAnimation() {
-  if (!visualPanel || window.matchMedia("(max-width: 900px)").matches) return;
-  window.clearTimeout(characterSwitchAnimationTimer);
-  visualPanel.classList.remove("character-switching");
-  void visualPanel.offsetWidth;
-  visualPanel.classList.add("character-switching");
-  characterSwitchAnimationTimer = window.setTimeout(() => {
-    visualPanel.classList.remove("character-switching");
-  }, 760);
+function playCharacterSwitchAnimation(onSwap) {
+  if (!visualPanel || window.matchMedia("(max-width: 900px)").matches) {
+    if (onSwap) onSwap();
+    return;
+  }
+
+  const portrait = visualPortrait;
+  const content = visualPanel.querySelector(".visual-content");
+  const copyEls = content ? content.querySelectorAll(".eyebrow, h1, .visual-subtitle, .quote-card, .trait-row") : [];
+
+  // Phase 1: fade out everything
+  if (portrait) portrait.classList.add("portrait-fade-out");
+  copyEls.forEach(el => el.classList.add("copy-fade-out"));
+
+  // Phase 2: after fade-out, swap content, then fade in
+  setTimeout(() => {
+    if (onSwap) onSwap();
+
+    // Remove fade-out, prep for fade-in
+    if (portrait) {
+      portrait.classList.remove("portrait-fade-out");
+      portrait.classList.add("portrait-fade-in");
+    }
+    copyEls.forEach((el, i) => {
+      el.classList.remove("copy-fade-out");
+      el.classList.add("copy-fade-in");
+      el.style.transitionDelay = `${0.06 + i * 0.06}s`;
+    });
+
+    // Phase 3: clean up
+    setTimeout(() => {
+      if (portrait) portrait.classList.remove("portrait-fade-in");
+      copyEls.forEach(el => {
+        el.classList.remove("copy-fade-in");
+        el.style.transitionDelay = "";
+      });
+    }, 700);
+  }, 320);
 }
 
 function applyTheme(theme = {}) {
@@ -433,43 +466,50 @@ function renderCharacterSwitcher() {
 function applyCharacter(character) {
   if (!character) return;
   const previousCharacterId = activeCharacter?.id || "";
-  activeCharacter = character;
-  activeCharacterId = character.id;
-  localStorage.setItem(CHARACTER_KEY, activeCharacterId);
-  assistantAvatarUrl = character.avatarUrl || "/api/avatar/assistant";
+  const isSwitching = previousCharacterId && previousCharacterId !== character.id;
 
-  applyTheme(character.theme || {});
-  if (siteName) siteName.textContent = character.name || "角色";
-  if (siteSubtitle) siteSubtitle.textContent = character.subtitle || "";
-  if (chatTitle) chatTitle.textContent = character.title || `${character.name || "角色"} · 在线聊天`;
-  document.title = `${character.name || "角色"} · 多角色聊天`;
-  if (visualPortrait) {
-    visualPortrait.src = character.portraitUrl || assistantAvatarUrl;
-    visualPortrait.alt = character.name || "角色";
-    visualPortrait.classList.toggle("mirrored", Boolean(character.portraitMirror));
-    visualPortrait.style.setProperty("--portrait-offset-x", `${normalizePortraitOffsetX(character.portraitOffsetX)}px`);
-    visualPortrait.style.setProperty("--portrait-scale", String(normalizePortraitScale(character.portraitScale)));
-  }
-  if (characterEyebrow) characterEyebrow.textContent = character.eyebrow || "Character Channel";
-  if (characterQuoteLabel) characterQuoteLabel.textContent = character.quoteLabel || "角色介绍";
-  if (characterQuote) characterQuote.textContent = character.quote || "";
-  if (characterTraitRow) {
-    const traits = Array.isArray(character.traits) ? character.traits : [];
-    characterTraitRow.innerHTML = traits
-      .map((trait) => `<span class="trait-tag">${escapeHtml(trait)}</span>`)
-      .join("");
-  }
-  if (messageInput) {
-    messageInput.placeholder = `给${character.name || "角色"}发一条消息……`;
-  }
-  if (typingAvatar) {
-    typingAvatar.src = assistantAvatarUrl;
-    typingAvatar.alt = character.name || "角色";
-  }
-  updateAllAssistantAvatars();
-  renderCharacterSwitcher();
-  if (previousCharacterId && previousCharacterId !== character.id) {
-    playCharacterSwitchAnimation();
+  const swapContent = () => {
+    activeCharacter = character;
+    activeCharacterId = character.id;
+    localStorage.setItem(CHARACTER_KEY, activeCharacterId);
+    assistantAvatarUrl = character.avatarUrl || "/api/avatar/assistant";
+
+    applyTheme(character.theme || {});
+    if (siteName) siteName.textContent = character.name || "角色";
+    if (siteSubtitle) siteSubtitle.textContent = character.subtitle || "";
+    if (chatTitle) chatTitle.textContent = character.title || `${character.name || "角色"} · 在线聊天`;
+    document.title = `${character.name || "角色"} · 多角色聊天`;
+    if (visualPortrait) {
+      visualPortrait.src = character.portraitUrl || assistantAvatarUrl;
+      visualPortrait.alt = character.name || "角色";
+      visualPortrait.classList.toggle("mirrored", Boolean(character.portraitMirror));
+      visualPortrait.style.setProperty("--portrait-offset-x", `${normalizePortraitOffsetX(character.portraitOffsetX)}px`);
+      visualPortrait.style.setProperty("--portrait-scale", String(normalizePortraitScale(character.portraitScale)));
+    }
+    if (characterEyebrow) characterEyebrow.textContent = character.eyebrow || "Character Channel";
+    if (characterQuoteLabel) characterQuoteLabel.textContent = character.quoteLabel || "角色介绍";
+    if (characterQuote) characterQuote.textContent = character.quote || "";
+    if (characterTraitRow) {
+      const traits = Array.isArray(character.traits) ? character.traits : [];
+      characterTraitRow.innerHTML = traits
+        .map((trait) => `<span class="trait-tag">${escapeHtml(trait)}</span>`)
+        .join("");
+    }
+    if (messageInput) {
+      messageInput.placeholder = `给${character.name || "角色"}发一条消息……`;
+    }
+    if (typingAvatar) {
+      typingAvatar.src = assistantAvatarUrl;
+      typingAvatar.alt = character.name || "角色";
+    }
+    updateAllAssistantAvatars();
+    renderCharacterSwitcher();
+  };
+
+  if (isSwitching) {
+    playCharacterSwitchAnimation(swapContent);
+  } else {
+    swapContent();
   }
 }
 
@@ -500,6 +540,9 @@ function createMessageElement(role, content, createdAt = Date.now(), options = {
   wrapper.className = `msg-group ${role === "assistant" ? "bot-group" : "user-group"}`;
   if (options.animate === false) {
     wrapper.classList.add("no-animate");
+  }
+  if (options.stagger > 0 && options.stagger <= 5) {
+    wrapper.classList.add(`msg-stagger-${options.stagger}`);
   }
 
   const avatar = document.createElement("img");
@@ -664,12 +707,18 @@ function appendMessage(role, content, createdAt = Date.now(), options = {}) {
   }
   const lastMsg = chatBody.querySelector(".msg-group:last-of-type");
   const lastRole = lastMsg?.classList.contains("user-group") ? "user" : "assistant";
+  if (role === lastRole) {
+    options.stagger = Math.min(5, (lastMsg?.dataset.stagger || 0) + 1);
+  }
   const el = createMessageElement(role, content, createdAt, options);
   if (role === lastRole) {
     el.classList.add("consecutive");
   }
+  if (options.stagger) {
+    el.dataset.stagger = options.stagger;
+  }
   chatBody.appendChild(el);
-  scrollToBottom();
+  scrollToBottom(true);
   return message;
 }
 
@@ -945,7 +994,7 @@ async function sendMessage() {
   sendButton.disabled = true;
   messageInput.disabled = true;
   typingRow.classList.remove("hidden");
-  scrollToBottom();
+  scrollToBottom(true);
 
   try {
     const requestBody = {
