@@ -52,13 +52,14 @@ const avatarStatus = document.getElementById("avatarStatus");
 
 const CONVERSATION_KEY = "firefly-chat-conversation-v2";
 const CHARACTER_KEY = "firefly-chat-character-v1";
+const USER_AVATAR_KEY = "firefly-chat-user-avatar-v1";
 const NOTICE_SEEN_PREFIX = "firefly-chat-announcement-seen-v1:";
 
 let activeConversationId = localStorage.getItem(CONVERSATION_KEY) || "";
 let activeCharacterId = localStorage.getItem(CHARACTER_KEY) || "";
 let heartbeatTimer = null;
 let assistantAvatarUrl = "/api/avatar/assistant";
-let userAvatarUrl = "/api/avatar/user";
+let userAvatarUrl = localStorage.getItem(USER_AVATAR_KEY) || "/api/avatar/user";
 let conversations = [];
 let currentMessages = [];
 let modelName = "";
@@ -837,6 +838,7 @@ async function pollImageJob(imageJobId) {
 
     if (data.userAvatarUrl) {
       userAvatarUrl = data.userAvatarUrl;
+      localStorage.setItem(USER_AVATAR_KEY, userAvatarUrl);
     }
     if (data.assistantAvatarUrl) {
       assistantAvatarUrl = data.assistantAvatarUrl;
@@ -887,7 +889,7 @@ async function fetchPublicConfig() {
     avatarUrl: config.assistantAvatarUrl || "/api/avatar/assistant",
     greeting: "你好，今天想聊些什么？"
   });
-  userAvatarUrl = config.userAvatarUrl || "/api/avatar/user";
+  userAvatarUrl = localStorage.getItem(USER_AVATAR_KEY) || config.userAvatarUrl || "/api/avatar/user";
   modelName = config.model || "";
   modelChip.textContent = modelName || "未配置模型";
 
@@ -942,6 +944,7 @@ async function loadSessionState() {
   conversations = Array.isArray(data.conversations) ? data.conversations : [];
   currentMessages = Array.isArray(data.messages) ? data.messages : [];
   userAvatarUrl = data.userAvatarUrl || userAvatarUrl;
+  localStorage.setItem(USER_AVATAR_KEY, userAvatarUrl);
 
   localStorage.setItem(CONVERSATION_KEY, activeConversationId);
 
@@ -1015,6 +1018,7 @@ async function sendMessage() {
     typingRow.classList.add("hidden");
     if (data.userAvatarUrl) {
       userAvatarUrl = data.userAvatarUrl;
+      localStorage.setItem(USER_AVATAR_KEY, userAvatarUrl);
     }
     if (data.assistantAvatarUrl) {
       assistantAvatarUrl = data.assistantAvatarUrl;
@@ -1213,6 +1217,7 @@ async function saveAvatar() {
 
     if (data.userAvatarUrl) {
       userAvatarUrl = data.userAvatarUrl;
+      localStorage.setItem(USER_AVATAR_KEY, userAvatarUrl);
       headerUserAvatar.src = userAvatarUrl;
       avatarPreview.src = userAvatarUrl;
       updateAllUserAvatars();
