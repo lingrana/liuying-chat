@@ -29,6 +29,15 @@ const noticeTitle = document.getElementById("noticeTitle");
 const noticeContent = document.getElementById("noticeContent");
 const noticeCloseButton = document.getElementById("noticeCloseButton");
 const panelStatus = document.getElementById("panelStatus");
+const characterSwitcher = document.getElementById("characterSwitcher");
+const chatTitle = document.getElementById("chatTitle");
+const visualPanel = document.querySelector(".visual-panel");
+const visualPortrait = document.getElementById("visualPortrait");
+const characterEyebrow = document.getElementById("characterEyebrow");
+const characterQuoteLabel = document.getElementById("characterQuoteLabel");
+const characterQuote = document.getElementById("characterQuote");
+const characterTraitRow = document.getElementById("characterTraitRow");
+const typingAvatar = document.getElementById("typingAvatar");
 
 const toggleAvatarPanelButton = document.getElementById("toggleAvatarPanelButton");
 const avatarPanel = document.getElementById("avatarPanel");
@@ -42,9 +51,11 @@ const closeAvatarPanelButton = document.getElementById("closeAvatarPanelButton")
 const avatarStatus = document.getElementById("avatarStatus");
 
 const CONVERSATION_KEY = "firefly-chat-conversation-v2";
+const CHARACTER_KEY = "firefly-chat-character-v1";
 const NOTICE_SEEN_PREFIX = "firefly-chat-announcement-seen-v1:";
 
 let activeConversationId = localStorage.getItem(CONVERSATION_KEY) || "";
+let activeCharacterId = localStorage.getItem(CHARACTER_KEY) || "";
 let heartbeatTimer = null;
 let assistantAvatarUrl = "/api/avatar/assistant";
 let userAvatarUrl = "/api/avatar/user";
@@ -52,6 +63,9 @@ let conversations = [];
 let currentMessages = [];
 let modelName = "";
 let announcementConfig = { enabled: false, title: "公告", html: "", seenKey: "" };
+let characters = [];
+let activeCharacter = null;
+let characterSwitchAnimationTimer = null;
 
 function setPanelStatus(text, isError = false) {
   if (!panelStatus) return;
@@ -300,6 +314,175 @@ function escapeHtml(text) {
     .replaceAll('"', "&quot;");
 }
 
+function hexToRgb(hex) {
+  const match = String(hex || "").trim().match(/^#([0-9a-f]{6})$/i);
+  if (!match) return "46, 168, 122";
+  const value = match[1];
+  return [
+    parseInt(value.slice(0, 2), 16),
+    parseInt(value.slice(2, 4), 16),
+    parseInt(value.slice(4, 6), 16)
+  ].join(", ");
+}
+
+function getActiveCharacter() {
+  return characters.find((item) => item.id === activeCharacterId) || characters[0] || null;
+}
+
+function normalizePortraitOffsetX(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return 0;
+  return Math.min(320, Math.max(-320, Math.round(numeric)));
+}
+
+function normalizePortraitScale(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return 1;
+  return Math.min(1.6, Math.max(0.6, Math.round(numeric * 100) / 100));
+}
+
+function preloadImage(src) {
+  return new Promise((resolve) => {
+    const url = String(src || "").trim();
+    if (!url) {
+      resolve();
+      return;
+    }
+    const image = new Image();
+    image.decoding = "async";
+    image.onload = () => resolve();
+    image.onerror = () => resolve();
+    image.src = url;
+    if (image.complete) resolve();
+  });
+}
+
+function playCharacterSwitchAnimation() {
+  if (!visualPanel || window.matchMedia("(max-width: 900px)").matches) return;
+  window.clearTimeout(characterSwitchAnimationTimer);
+  visualPanel.classList.remove("character-switching");
+  void visualPanel.offsetWidth;
+  visualPanel.classList.add("character-switching");
+  characterSwitchAnimationTimer = window.setTimeout(() => {
+    visualPanel.classList.remove("character-switching");
+  }, 760);
+}
+
+function applyTheme(theme = {}) {
+  const root = document.documentElement;
+  const pairs = {
+    "--bg": theme.bg,
+    "--bg-warm": theme.bgWarm,
+    "--surface": theme.surface,
+    "--border": theme.border,
+    "--border-light": theme.borderLight,
+    "--accent": theme.accent,
+    "--accent-bright": theme.accentBright,
+    "--accent-dim": theme.accentDim,
+    "--accent-deep": theme.accentDeep,
+    "--text": theme.text,
+    "--text-mid": theme.textMid,
+    "--text-dim": theme.textDim,
+    "--visual-start": theme.visualStart,
+    "--visual-mid": theme.visualMid,
+    "--visual-end": theme.visualEnd
+  };
+  for (const [key, value] of Object.entries(pairs)) {
+    if (value) root.style.setProperty(key, value);
+  }
+  if (theme.accent) {
+    root.style.setProperty("--accent-rgb", hexToRgb(theme.accent));
+  }
+}
+
+function updateAllAssistantAvatars() {
+  document.querySelectorAll(".bot-group .msg-avatar, .typing-avatar").forEach((img) => {
+    img.src = assistantAvatarUrl;
+    img.alt = activeCharacter?.name || "角色";
+  });
+}
+
+function renderCharacterSwitcher() {
+  if (!characterSwitcher) return;
+  if (!Array.isArray(characters) || characters.length <= 1) {
+    characterSwitcher.hidden = true;
+    characterSwitcher.innerHTML = "";
+    return;
+  }
+
+  characterSwitcher.hidden = false;
+  characterSwitcher.innerHTML = characters.map((character) => {
+    const active = character.id === activeCharacterId ? " active" : "";
+    return `
+      <button class="character-tab${active}" type="button" role="tab" aria-selected="${active ? "true" : "false"}" data-character-id="${escapeHtml(character.id)}" title="${escapeHtml(character.name)}">
+        <img src="${escapeHtml(character.avatarUrl || "/api/avatar/assistant")}" alt="${escapeHtml(character.name)}">
+        <span>${escapeHtml(character.name)}</span>
+      </button>
+    `;
+  }).join("");
+
+  characterSwitcher.querySelectorAll("[data-character-id]").forEach((button) => {
+    button.addEventListener("click", () => {
+      switchCharacter(button.getAttribute("data-character-id") || "").catch((error) => {
+        setPanelStatus(error.message || "角色切换失败", true);
+      });
+    });
+  });
+}
+
+function applyCharacter(character) {
+  if (!character) return;
+  const previousCharacterId = activeCharacter?.id || "";
+  activeCharacter = character;
+  activeCharacterId = character.id;
+  localStorage.setItem(CHARACTER_KEY, activeCharacterId);
+  assistantAvatarUrl = character.avatarUrl || "/api/avatar/assistant";
+
+  applyTheme(character.theme || {});
+  if (siteName) siteName.textContent = character.name || "角色";
+  if (siteSubtitle) siteSubtitle.textContent = character.subtitle || "";
+  if (chatTitle) chatTitle.textContent = character.title || `${character.name || "角色"} · 在线聊天`;
+  document.title = `${character.name || "角色"} · 多角色聊天`;
+  if (visualPortrait) {
+    visualPortrait.src = character.portraitUrl || assistantAvatarUrl;
+    visualPortrait.alt = character.name || "角色";
+    visualPortrait.classList.toggle("mirrored", Boolean(character.portraitMirror));
+    visualPortrait.style.setProperty("--portrait-offset-x", `${normalizePortraitOffsetX(character.portraitOffsetX)}px`);
+    visualPortrait.style.setProperty("--portrait-scale", String(normalizePortraitScale(character.portraitScale)));
+  }
+  if (characterEyebrow) characterEyebrow.textContent = character.eyebrow || "Character Channel";
+  if (characterQuoteLabel) characterQuoteLabel.textContent = character.quoteLabel || "角色介绍";
+  if (characterQuote) characterQuote.textContent = character.quote || "";
+  if (characterTraitRow) {
+    const traits = Array.isArray(character.traits) ? character.traits : [];
+    characterTraitRow.innerHTML = traits
+      .map((trait) => `<span class="trait-tag">${escapeHtml(trait)}</span>`)
+      .join("");
+  }
+  if (messageInput) {
+    messageInput.placeholder = `给${character.name || "角色"}发一条消息……`;
+  }
+  if (typingAvatar) {
+    typingAvatar.src = assistantAvatarUrl;
+    typingAvatar.alt = character.name || "角色";
+  }
+  updateAllAssistantAvatars();
+  renderCharacterSwitcher();
+  if (previousCharacterId && previousCharacterId !== character.id) {
+    playCharacterSwitchAnimation();
+  }
+}
+
+async function switchCharacter(characterId) {
+  const nextCharacter = characters.find((item) => item.id === characterId);
+  if (!nextCharacter || nextCharacter.id === activeCharacterId) return;
+  await preloadImage(nextCharacter.portraitUrl || nextCharacter.avatarUrl || "");
+  activeConversationId = "";
+  applyCharacter(nextCharacter);
+  setSessionPanelOpen(false);
+  await loadSessionState();
+}
+
 function cleanVisibleText(text) {
   return String(text || "")
     .replace(/<think\b[^>]*>[\s\S]*?<\/think>/gi, "")
@@ -308,7 +491,9 @@ function cleanVisibleText(text) {
     .trim();
 }
 
-const GREETING_MESSAGE = "嗨，又见面啦……我的意思，很高兴见到你。今天也想和我聊聊吗？";
+function getGreetingMessage() {
+  return activeCharacter?.greeting || "你好，今天想聊些什么？";
+}
 
 function createMessageElement(role, content, createdAt = Date.now(), options = {}) {
   const wrapper = document.createElement("div");
@@ -320,7 +505,7 @@ function createMessageElement(role, content, createdAt = Date.now(), options = {
   const avatar = document.createElement("img");
   avatar.className = "msg-avatar";
   avatar.src = role === "assistant" ? assistantAvatarUrl : userAvatarUrl;
-  avatar.alt = role === "assistant" ? "流萤" : "用户";
+  avatar.alt = role === "assistant" ? (activeCharacter?.name || "角色") : "用户";
   avatar.loading = "eager";
   avatar.decoding = "async";
 
@@ -332,7 +517,7 @@ function createMessageElement(role, content, createdAt = Date.now(), options = {
 
   const senderName = document.createElement("span");
   senderName.className = "sender-name";
-  senderName.textContent = role === "assistant" ? "流萤" : "你";
+  senderName.textContent = role === "assistant" ? (activeCharacter?.name || "角色") : "你";
 
   const time = document.createElement("span");
   time.className = "msg-time";
@@ -411,7 +596,7 @@ function renderMessages(messages) {
 
   const greetingEl = createMessageElement(
     "assistant",
-    GREETING_MESSAGE,
+    getGreetingMessage(),
     Date.now(),
     { animate: false }
   );
@@ -538,7 +723,8 @@ function renderConversations() {
         const data = await fetchJson("/api/conversation", {
           method: "DELETE",
           body: JSON.stringify({
-            conversationId: targetId
+            conversationId: targetId,
+            characterId: activeCharacterId
           })
         });
         conversations = Array.isArray(data.conversations) ? data.conversations : [];
@@ -603,6 +789,14 @@ async function pollImageJob(imageJobId) {
     if (data.userAvatarUrl) {
       userAvatarUrl = data.userAvatarUrl;
     }
+    if (data.assistantAvatarUrl) {
+      assistantAvatarUrl = data.assistantAvatarUrl;
+      updateAllAssistantAvatars();
+    }
+    if (data.characterId && data.characterId !== activeCharacterId) {
+      const serverCharacter = characters.find((item) => item.id === data.characterId);
+      if (serverCharacter) applyCharacter(serverCharacter);
+    }
     if (Array.isArray(data.conversations)) {
       conversations = data.conversations;
       renderConversations();
@@ -630,10 +824,20 @@ async function pollImageJob(imageJobId) {
 
 async function fetchPublicConfig() {
   const config = await fetchJson("/api/config/public");
-  siteName.textContent = config.siteName || "流萤";
-  siteSubtitle.textContent = config.siteSubtitle || "会找到的，属于我的梦……";
   renderAnnouncement(config.announcement || {});
-  assistantAvatarUrl = config.assistantAvatarUrl || "/api/avatar/assistant";
+  characters = Array.isArray(config.characters) ? config.characters : [];
+  const configuredDefaultId = config.defaultCharacterId || characters[0]?.id || "";
+  if (!characters.some((item) => item.id === activeCharacterId)) {
+    activeCharacterId = configuredDefaultId;
+  }
+  applyCharacter(getActiveCharacter() || {
+    id: configuredDefaultId || "firefly",
+    name: config.siteName || "流萤",
+    title: `${config.siteName || "流萤"} · 在线聊天`,
+    subtitle: config.siteSubtitle || "会找到的，属于我的梦……",
+    avatarUrl: config.assistantAvatarUrl || "/api/avatar/assistant",
+    greeting: "你好，今天想聊些什么？"
+  });
   userAvatarUrl = config.userAvatarUrl || "/api/avatar/user";
   modelName = config.model || "";
   modelChip.textContent = modelName || "未配置模型";
@@ -672,9 +876,19 @@ async function sendHeartbeat() {
 async function loadSessionState() {
   const data = await fetchJson("/api/session/state", {
     method: "POST",
-    body: JSON.stringify({})
+    body: JSON.stringify({
+      characterId: activeCharacterId
+    })
   });
 
+  if (data.characterId && data.characterId !== activeCharacterId) {
+    const serverCharacter = characters.find((item) => item.id === data.characterId);
+    if (serverCharacter) applyCharacter(serverCharacter);
+  }
+  if (data.assistantAvatarUrl) {
+    assistantAvatarUrl = data.assistantAvatarUrl;
+    updateAllAssistantAvatars();
+  }
   activeConversationId = data.conversationId || "";
   conversations = Array.isArray(data.conversations) ? data.conversations : [];
   currentMessages = Array.isArray(data.messages) ? data.messages : [];
@@ -692,9 +906,14 @@ async function loadSessionState() {
 
 async function loadConversation(conversationId) {
   const params = new URLSearchParams({
-    conversationId
+    conversationId,
+    characterId: activeCharacterId
   });
   const data = await fetchJson(`/api/conversation?${params.toString()}`);
+  if (data.characterId && data.characterId !== activeCharacterId) {
+    const serverCharacter = characters.find((item) => item.id === data.characterId);
+    if (serverCharacter) applyCharacter(serverCharacter);
+  }
   currentMessages = Array.isArray(data.messages) ? data.messages : [];
   renderMessages(currentMessages);
 }
@@ -703,7 +922,8 @@ async function createConversation() {
   const data = await fetchJson("/api/conversations", {
     method: "POST",
     body: JSON.stringify({
-      title: "新对话"
+      title: "新对话",
+      characterId: activeCharacterId
     })
   });
   activeConversationId = data.conversationId;
@@ -730,6 +950,7 @@ async function sendMessage() {
   try {
     const requestBody = {
       conversationId: activeConversationId,
+      characterId: activeCharacterId,
       message: content
     };
     const customImageApi = getCustomImageApiPayload();
@@ -745,6 +966,14 @@ async function sendMessage() {
     typingRow.classList.add("hidden");
     if (data.userAvatarUrl) {
       userAvatarUrl = data.userAvatarUrl;
+    }
+    if (data.assistantAvatarUrl) {
+      assistantAvatarUrl = data.assistantAvatarUrl;
+      updateAllAssistantAvatars();
+    }
+    if (data.characterId && data.characterId !== activeCharacterId) {
+      const serverCharacter = characters.find((item) => item.id === data.characterId);
+      if (serverCharacter) applyCharacter(serverCharacter);
     }
     if (Array.isArray(data.conversations)) {
       conversations = data.conversations;

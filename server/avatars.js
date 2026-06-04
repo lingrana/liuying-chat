@@ -2,11 +2,21 @@ const fs = require("fs");
 const path = require("path");
 const { ROOT, DATA_DIR, USERS_DIR, DEFAULT_ASSISTANT_AVATAR, DEFAULT_USER_AVATAR } = require("./constants");
 const { isRemoteUrl, inferExtensionFromMime } = require("./utils");
+const { normalizeCharacterId, resolveCharacter } = require("./characters");
 
-function getAvatarPath(config, role) {
+function getAvatarRawValue(config, role, characterId = "") {
+  if (role === "user") {
+    return typeof config.userAvatarPath === "string" ? config.userAvatarPath.trim() : "";
+  }
+  const selectedCharacter = resolveCharacter(config, characterId);
+  return typeof selectedCharacter?.avatarPath === "string" && selectedCharacter.avatarPath.trim()
+    ? selectedCharacter.avatarPath.trim()
+    : typeof config.assistantAvatarPath === "string" ? config.assistantAvatarPath.trim() : "";
+}
+
+function getAvatarPath(config, role, characterId = "") {
   const fallback = role === "user" ? DEFAULT_USER_AVATAR : DEFAULT_ASSISTANT_AVATAR;
-  const key = role === "user" ? "userAvatarPath" : "assistantAvatarPath";
-  const rawValue = typeof config[key] === "string" ? config[key].trim() : "";
+  const rawValue = getAvatarRawValue(config, role, characterId);
 
   if (!rawValue || isRemoteUrl(rawValue)) {
     return fallback;
@@ -26,13 +36,18 @@ function getAvatarPath(config, role) {
   return fallback;
 }
 
-function resolveAvatarUrl(config, role) {
-  const key = role === "user" ? "userAvatarPath" : "assistantAvatarPath";
-  const rawValue = typeof config[key] === "string" ? config[key].trim() : "";
+function resolveAvatarUrl(config, role, characterId = "") {
+  const rawValue = getAvatarRawValue(config, role, characterId);
   if (rawValue && isRemoteUrl(rawValue)) {
     return rawValue;
   }
-  return role === "user" ? "/api/avatar/user" : "/api/avatar/assistant";
+  if (role === "user") {
+    return "/api/avatar/user";
+  }
+  const normalizedCharacterId = normalizeCharacterId(characterId);
+  return normalizedCharacterId
+    ? `/api/avatar/assistant?character=${encodeURIComponent(normalizedCharacterId)}`
+    : "/api/avatar/assistant";
 }
 
 function resolveUserAvatarUrl(config, userStore) {

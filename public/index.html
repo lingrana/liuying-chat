@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>流萤 · 聊天</title>
-  <link rel="icon" type="image/png" href="/ly.png">
+  <title>多角色聊天</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@300;400;600;700&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
   <style>
@@ -15,6 +15,7 @@
       --border: #c8e6d0;
       --border-light: #e0f0e4;
       --accent: #2ea87a;
+      --accent-rgb: 46, 168, 122;
       --accent-bright: #1d8c63;
       --accent-dim: #4cc99a;
       --accent-deep: #1a6b4e;
@@ -22,6 +23,9 @@
       --text: #1a2e26;
       --text-mid: #4a6b5a;
       --text-dim: #7a9e8a;
+      --visual-start: #e8f5ee;
+      --visual-mid: #f0f9f4;
+      --visual-end: #e4f2ea;
       --shadow-sm: 0 1px 3px rgba(0,0,0,0.06);
       --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
       --shadow-lg: 0 8px 30px rgba(0,0,0,0.1);
@@ -44,8 +48,8 @@
       position: fixed;
       inset: 0;
       background:
-        radial-gradient(ellipse 55% 55% at 10% 50%, rgba(46,168,122,0.06) 0%, transparent 60%),
-        radial-gradient(ellipse 40% 50% at 85% 25%, rgba(76,201,154,0.04) 0%, transparent 55%),
+        radial-gradient(ellipse 55% 55% at 10% 50%, rgba(var(--accent-rgb),0.06) 0%, transparent 60%),
+        radial-gradient(ellipse 40% 50% at 85% 25%, rgba(var(--accent-rgb),0.04) 0%, transparent 55%),
         radial-gradient(ellipse 60% 50% at 50% 95%, rgba(26,107,78,0.03) 0%, transparent 45%);
       pointer-events: none;
       z-index: 0;
@@ -71,7 +75,7 @@
     .visual-bg {
       position: absolute;
       inset: 0;
-      background: linear-gradient(165deg, #e8f5ee 0%, #f0f9f4 35%, #e4f2ea 100%);
+      background: linear-gradient(165deg, var(--visual-start) 0%, var(--visual-mid) 35%, var(--visual-end) 100%);
     }
 
     .visual-bg::before {
@@ -79,8 +83,8 @@
       position: absolute;
       inset: 0;
       background:
-        radial-gradient(ellipse 55% 45% at 45% 30%, rgba(46,168,122,0.1) 0%, transparent 65%),
-        radial-gradient(ellipse 35% 50% at 25% 70%, rgba(26,107,78,0.08) 0%, transparent 55%);
+        radial-gradient(ellipse 55% 45% at 45% 30%, rgba(var(--accent-rgb),0.1) 0%, transparent 65%),
+        radial-gradient(ellipse 35% 50% at 25% 70%, rgba(var(--accent-rgb),0.08) 0%, transparent 55%);
     }
 
     .visual-bg::after {
@@ -91,12 +95,20 @@
     }
 
     .visual-portrait {
+      --portrait-scale-x: 1;
+      --portrait-offset-x: 0px;
+      --portrait-scale: 1;
       position: absolute;
-      right: -30px;
+      left: calc(50% + var(--portrait-offset-x));
+      right: auto;
       top: 50%;
-      transform: translateY(-55%);
-      width: 340px;
-      height: auto;
+      transform: translate(-50%, -55%) scale(var(--portrait-scale)) scaleX(var(--portrait-scale-x));
+      transform-origin: center bottom;
+      width: auto;
+      height: clamp(520px, 78vh, 760px);
+      max-width: none;
+      object-fit: contain;
+      object-position: center bottom;
       opacity: 0.55;
       filter: brightness(0.95) contrast(1.05) saturate(1.05);
       pointer-events: none;
@@ -105,9 +117,35 @@
       animation: portraitFloat 9s ease-in-out infinite;
     }
 
+    .visual-portrait.mirrored {
+      --portrait-scale-x: -1;
+    }
+
+    .visual-panel.character-switching .visual-portrait {
+      animation:
+        portraitSwitchIn 0.56s cubic-bezier(0.2, 0.8, 0.2, 1) both,
+        portraitFloat 9s ease-in-out 0.56s infinite;
+    }
+
     @keyframes portraitFloat {
-      0%, 100% { transform: translateY(-55%); }
-      50% { transform: translateY(-57.5%); }
+      0%, 100% { transform: translate(-50%, -55%) scale(var(--portrait-scale)) scaleX(var(--portrait-scale-x)); }
+      50% { transform: translate(-50%, -57.5%) scale(var(--portrait-scale)) scaleX(var(--portrait-scale-x)); }
+    }
+
+    @keyframes portraitSwitchIn {
+      0% {
+        opacity: 0;
+        filter: brightness(1.06) contrast(1.02) saturate(0.92) blur(8px);
+        transform: translate(calc(-50% + 34px), -55%) scale(var(--portrait-scale)) scaleX(var(--portrait-scale-x));
+      }
+      62% {
+        opacity: 0.62;
+      }
+      100% {
+        opacity: 0.55;
+        filter: brightness(0.95) contrast(1.05) saturate(1.05) blur(0);
+        transform: translate(-50%, -55%) scale(var(--portrait-scale)) scaleX(var(--portrait-scale-x));
+      }
     }
 
     .particles {
@@ -148,6 +186,30 @@
       z-index: 2;
       padding: 3rem 2.25rem;
       width: 100%;
+    }
+
+    .visual-panel.character-switching .eyebrow,
+    .visual-panel.character-switching .visual-content h1,
+    .visual-panel.character-switching .visual-subtitle,
+    .visual-panel.character-switching .quote-card,
+    .visual-panel.character-switching .trait-row {
+      animation: visualCopySwitchIn 0.44s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+    }
+
+    .visual-panel.character-switching .visual-content h1 { animation-delay: 0.04s; }
+    .visual-panel.character-switching .visual-subtitle { animation-delay: 0.08s; }
+    .visual-panel.character-switching .quote-card { animation-delay: 0.12s; }
+    .visual-panel.character-switching .trait-row { animation-delay: 0.16s; }
+
+    @keyframes visualCopySwitchIn {
+      from {
+        opacity: 0;
+        transform: translateY(12px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
     }
 
     .eyebrow {
@@ -329,6 +391,53 @@
       display: flex;
       align-items: center;
       gap: 0.65rem;
+    }
+
+    .character-switcher {
+      display: flex;
+      align-items: center;
+      gap: 0.28rem;
+      padding: 0.18rem;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: rgba(255,255,255,0.62);
+      max-width: min(42vw, 360px);
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+
+    .character-switcher::-webkit-scrollbar { display: none; }
+
+    .character-tab {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      min-width: 0;
+      min-height: 28px;
+      padding: 0.18rem 0.58rem 0.18rem 0.24rem;
+      border: 0;
+      border-radius: 999px;
+      background: transparent;
+      color: var(--text-dim);
+      cursor: pointer;
+      transition: color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+      white-space: nowrap;
+      font-size: 0.62rem;
+    }
+
+    .character-tab img {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      object-fit: cover;
+      border: 1px solid rgba(var(--accent-rgb),0.2);
+      flex: 0 0 auto;
+    }
+
+    .character-tab.active {
+      color: var(--accent-deep);
+      background: rgba(var(--accent-rgb),0.1);
+      box-shadow: inset 0 0 0 1px rgba(var(--accent-rgb),0.16);
     }
 
     .chip {
@@ -1459,6 +1568,9 @@
       .header-title h2 { font-size: 0.85rem; }
       .header-sub { font-size: 0.55rem; }
       .header-right { gap: 0.4rem; }
+      .character-switcher { max-width: 46vw; }
+      .character-tab { padding-right: 0.38rem; }
+      .character-tab span { display: none; }
       .chip { 
         font-size: 0.52rem; 
         padding: 0.22rem 0.5rem; 
@@ -1680,6 +1792,7 @@
       .typing-row { padding: 0 0.65rem; }
       .chip { display: none; }
       .header-right { gap: 0.3rem; }
+      .character-switcher { max-width: 112px; }
       .icon-btn { width: 26px; height: 26px; }
       .msg-group.bot-group .bubble,
       .msg-group.user-group .bubble { 
@@ -1715,18 +1828,19 @@
       </div>
       <img
         class="visual-portrait"
+        id="visualPortrait"
         src="https://patchwiki.biligame.com/images/sr/thumb/d/d3/k7g0ja362py1shisgib2uxl5s5kzbfw.png/900px-%E6%B5%81%E8%90%A4%E7%AB%8B%E7%BB%98.png"
         alt="流萤"
       >
       <div class="visual-content">
-        <p class="eyebrow">Firefly Channel</p>
+        <p class="eyebrow" id="characterEyebrow">Firefly Channel</p>
         <h1 id="siteName">流萤</h1>
         <p class="visual-subtitle" id="siteSubtitle">会找到的，属于我的梦……</p>
         <div class="quote-card">
-          <span class="quote-label">角色介绍</span>
-          <p>温柔、克制、清醒。知道燃烧的代价，也还是会想看看明天的星空。</p>
+          <span class="quote-label" id="characterQuoteLabel">角色介绍</span>
+          <p id="characterQuote">温柔、克制、清醒。知道燃烧的代价，也还是会想看看明天的星空。</p>
         </div>
-        <div class="trait-row">
+        <div class="trait-row" id="characterTraitRow">
           <span class="trait-tag">格拉默</span>
           <span class="trait-tag">星核猎手</span>
           <span class="trait-tag">失熵症</span>
@@ -1738,7 +1852,7 @@
     <section class="chat-panel">
       <header class="chat-header">
         <div class="header-title">
-          <h2>流萤 · 在线聊天</h2>
+          <h2 id="chatTitle">流萤 · 在线聊天</h2>
           <div class="header-sub"><span class="header-dot" id="headerDot"></span><span id="headerSub">澪染制作 · 短信频道已接通</span></div>
         </div>
         <div class="header-right">
@@ -1768,6 +1882,7 @@
               </a>
             </div>
           </div>
+          <div class="character-switcher" id="characterSwitcher" role="tablist" aria-label="角色切换"></div>
           <span class="chip accent-chip" id="modelChip">模型读取中</span>
           <span class="chip" id="visitorCount">在线 0 人</span>
           <button class="icon-btn" id="toggleCustomApiPanelButton" type="button" title="自定义图片 API">
@@ -1893,7 +2008,7 @@
 
       <!-- Typing -->
       <div class="typing-row hidden" id="typingRow">
-        <img class="typing-avatar" src="/api/avatar/assistant" alt="流萤">
+        <img class="typing-avatar" id="typingAvatar" src="/api/avatar/assistant" alt="流萤">
         <div class="typing-bubble">
           <div class="typing-dot"></div>
           <div class="typing-dot"></div>

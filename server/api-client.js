@@ -226,11 +226,11 @@ function getUsageFromPayload(payload) {
   return { promptTokens, completionTokens, totalTokens };
 }
 
-function getImagePrompt(message) {
-  return buildImagePrompt(message).prompt || normalizePromptText(message);
+function getImagePrompt(message, character = null) {
+  return buildImagePrompt(message, [], character).prompt || normalizePromptText(message);
 }
 
-function buildImagePrompt(message, contextMessages = []) {
+function buildImagePrompt(message, contextMessages = [], character = null) {
   const normalized = normalizePromptText(message);
   const userPrompt = normalized.replace(/[，,:：。.\s]+$/g, "").trim();
   const imageSubject = stripImageCommand(userPrompt);
@@ -301,7 +301,7 @@ function buildImagePrompt(message, contextMessages = []) {
   const capped = rawPrompt.slice(0, IMAGE_PROMPT_MAX_LENGTH);
   return {
     ok: true,
-    prompt: enhanceImagePrompt(capped),
+    prompt: enhanceImagePrompt(capped, character),
     userPrompt: userPrompt.slice(0, IMAGE_PROMPT_MAX_LENGTH),
     reply: ""
   };
@@ -347,18 +347,28 @@ function buildImageContext(messages) {
     .slice(0, 1200);
 }
 
-function enhanceImagePrompt(prompt) {
-  if (!/(流萤|firefly|萨姆|sam|星穹|星铁|崩坏|hon kai|honkai|hsr|你|your|you)/i.test(prompt)) {
+function enhanceImagePrompt(prompt, character = null) {
+  const name = String(character?.name || "").trim();
+  const id = String(character?.id || "").trim();
+  const hints = Array.isArray(character?.imagePromptHints)
+    ? character.imagePromptHints.map((item) => String(item || "").trim()).filter(Boolean)
+    : [];
+  const characterPattern = [name, id, "你", "your", "you"]
+    .filter(Boolean)
+    .map((item) => item.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+    .join("|");
+  const shouldEnhance = characterPattern
+    ? new RegExp(characterPattern, "i").test(prompt)
+    : /(流萤|firefly|萨姆|sam|星穹|星铁|崩坏|hon kai|honkai|hsr|你|your|you)/i.test(prompt);
+  if (!shouldEnhance) {
     return prompt;
   }
-  const fireflyCues = [
+  const characterCues = [
     "Keep the user's requested scene primary.",
-    "If the request refers to 'you' or the current speaker, interpret the subject as Firefly.",
-    "If depicting Firefly from Honkai: Star Rail, use official-safe visual cues: silver hair, black hair ornament, blue-and-pink eyes, gentle restrained expression, gray-green dress with dark shawl, or SAM fire armor when explicitly requested.",
-    "Mood: quiet, sincere, resilient, with motifs of stars, dreams, fireflies, night wind, and a fragile but determined light.",
+    ...hints,
     "Avoid unsupported future plot, private relationship escalation, system text, captions, watermarks, and out-of-character elements."
-  ].join(" ");
-  return `${prompt}\n\n${fireflyCues}`;
+  ].filter(Boolean).join(" ");
+  return `${prompt}\n\n${characterCues}`;
 }
 
 function getFirstImageCandidate(payload) {

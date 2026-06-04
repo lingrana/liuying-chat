@@ -16,6 +16,7 @@ const { buildChatMessages } = require("./prompts");
 const { getAvatarPath, resolveAvatarUrl, resolveUserAvatarUrl, getCustomUserAvatarPath, saveUserAvatarFromDataUrl } = require("./avatars");
 const { getAdminConversationAudit, sanitizeAdminMessage, sanitizeAdminConversation, resolveAdminUserStore, findConversationForAdmin, findMessageForAdmin } = require("./admin-audit");
 const { writeFileAtomic } = require("./file-store");
+const { normalizeCharacterId, normalizeCharacters, resolveCharacter } = require("./characters");
 
 let apiConnectionStatus = { ok: false, message: "未测试", testedAt: 0 };
 const imageGenerationLimits = new Map();
@@ -93,11 +94,69 @@ function saveImageJobStore(userKey, userStore, save) {
   save();
 }
 
-function getConversationList(userStore) {
+function getConversationList(userStore, characterId = "") {
+  const normalizedCharacterId = normalizeCharacterId(characterId);
   return userStore.conversations
     .slice()
+    .filter((conversation) => !normalizedCharacterId || (conversation.characterId || "firefly") === normalizedCharacterId)
     .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
     .map(sanitizeConversation);
+}
+
+function getOrCreateCharacterConversation(userStore, conversationId, characterId) {
+  const normalizedCharacterId = normalizeCharacterId(characterId) || "firefly";
+  if (!Array.isArray(userStore.conversations)) {
+    userStore.conversations = [];
+  }
+
+  const byId = conversationId
+    ? userStore.conversations.find((item) => item.id === conversationId)
+    : null;
+  if (byId && (byId.characterId || "firefly") === normalizedCharacterId) {
+    byId.characterId = normalizedCharacterId;
+    return byId;
+  }
+
+  const byCharacter = userStore.conversations.find((item) => (item.characterId || "firefly") === normalizedCharacterId);
+  if (byCharacter) {
+    return byCharacter;
+  }
+
+  const conversation = createConversation({ characterId: normalizedCharacterId });
+  userStore.conversations.unshift(conversation);
+  return conversation;
+}
+
+function normalizePublicAssetUrl(value, fallback = "") {
+  const raw = String(value || "").trim();
+  if (!raw) return fallback;
+  if (/^(?:https?:)?\/\//i.test(raw) || raw.startsWith("/")) return raw;
+  const normalized = raw.replace(/\\/g, "/");
+  if (normalized.startsWith("public/")) {
+    return `/${normalized.slice("public/".length)}`;
+  }
+  return fallback;
+}
+
+function publicCharacter(config, character) {
+  const avatarUrl = resolveAvatarUrl(config, "assistant", character.id);
+  return {
+    id: character.id,
+    name: character.name,
+    title: character.title,
+    subtitle: character.subtitle,
+    avatarUrl,
+    portraitUrl: normalizePublicAssetUrl(character.portraitUrl, avatarUrl),
+    portraitMirror: Boolean(character.portraitMirror),
+    portraitOffsetX: character.portraitOffsetX || 0,
+    portraitScale: character.portraitScale || 1,
+    eyebrow: character.eyebrow,
+    quoteLabel: character.quoteLabel,
+    quote: character.quote,
+    traits: character.traits,
+    greeting: character.greeting,
+    theme: character.theme
+  };
 }
 
 function resolveGeneratedImageUrl(imageData) {
@@ -192,6 +251,7 @@ async function runImageGenerationJob({
   config,
   clientIp,
   persistent,
+  characterId = "",
   trackUsage = true,
   displayModel = imageConfig.model
 }) {
@@ -218,7 +278,9 @@ async function runImageGenerationJob({
       const reply = "我画好了……给你。";
       const now = Date.now();
       const latest = resolveImageJobStore({ userKey, userStore, conversation, conversationId });
+      latest.conversation.characterId = characterId || latest.conversation.characterId || "firefly";
       appendConversationMessage(latest.conversation, "assistant", reply, now, {
+        characterId,
         kind: "image",
         imageUrl,
         imagePrompt
@@ -235,8 +297,10 @@ async function runImageGenerationJob({
         model: displayModel,
         persistent,
         userAvatarUrl: resolveUserAvatarUrl(config, latest.userStore),
+        assistantAvatarUrl: resolveAvatarUrl(config, "assistant", characterId),
+        characterId,
         conversationId: latest.conversation.id,
-        conversations: getConversationList(latest.userStore)
+        conversations: getConversationList(latest.userStore, characterId)
       });
       return;
     } catch (error) {
@@ -253,8 +317,10 @@ async function runImageGenerationJob({
           model: displayModel,
           persistent,
           userAvatarUrl: resolveUserAvatarUrl(config, latest.userStore),
+          assistantAvatarUrl: resolveAvatarUrl(config, "assistant", characterId),
+          characterId,
           conversationId: latest.conversation.id,
-          conversations: getConversationList(latest.userStore)
+          conversations: getConversationList(latest.userStore, characterId)
         });
       }
 
@@ -270,7 +336,8 @@ async function runImageGenerationJob({
   const reply = `图片没有顺利生成……${error.message}`;
   const now = Date.now();
   const latest = resolveImageJobStore({ userKey, userStore, conversation, conversationId });
-  appendConversationMessage(latest.conversation, "assistant", reply, now);
+  latest.conversation.characterId = characterId || latest.conversation.characterId || "firefly";
+  appendConversationMessage(latest.conversation, "assistant", reply, now, { characterId });
   latest.userStore.updatedAt = now;
   saveImageJobStore(userKey, latest.userStore, save);
 
@@ -282,8 +349,10 @@ async function runImageGenerationJob({
     model: displayModel,
     persistent,
     userAvatarUrl: resolveUserAvatarUrl(config, latest.userStore),
+    assistantAvatarUrl: resolveAvatarUrl(config, "assistant", characterId),
+    characterId,
     conversationId: latest.conversation.id,
-    conversations: getConversationList(latest.userStore)
+    conversations: getConversationList(latest.userStore, characterId)
   });
 }
 
@@ -394,12 +463,16 @@ function requireAdminAuth(req, res) {
 
 function publicConfig(config) {
   const chatConfig = getChatConfig(config);
+  const characters = normalizeCharacters(config.characters, config);
+  const defaultCharacter = resolveCharacter(config, config.defaultCharacterId);
   return {
     siteName: config.siteName,
     siteSubtitle: config.siteSubtitle,
+    defaultCharacterId: defaultCharacter.id,
+    characters: characters.map((character) => publicCharacter(config, character)),
     modelConfigured: Boolean(chatConfig.model && chatConfig.baseUrl),
     model: chatConfig.model || "",
-    assistantAvatarUrl: resolveAvatarUrl(config, "assistant"),
+    assistantAvatarUrl: resolveAvatarUrl(config, "assistant", defaultCharacter.id),
     userAvatarUrl: resolveAvatarUrl(config, "user"),
     announcement: {
       enabled: Boolean(config.announcementEnabled),
@@ -414,7 +487,9 @@ function publicConfig(config) {
 
 async function handleAvatar(_req, res, role) {
   const config = loadConfig();
-  sendFile(res, getAvatarPath(config, role));
+  const url = new URL(_req.url, `http://${_req.headers.host}`);
+  const characterId = url.searchParams.get("character") || "";
+  sendFile(res, getAvatarPath(config, role, characterId));
 }
 
 async function handleSongGet(req, res) {
@@ -476,6 +551,7 @@ async function handleChat(req, res) {
   const semanticConfig = getSemanticConfig(config);
   const message = typeof body.message === "string" ? body.message.trim() : "";
   const conversationId = typeof body.conversationId === "string" ? body.conversationId.trim() : "";
+  const requestedCharacterId = normalizeCharacterId(body.characterId);
   const clientIp = getClientIp(req);
   const customImageApi = readCustomImageConfig(body);
 
@@ -491,11 +567,11 @@ async function handleChat(req, res) {
 
   cleanupExpiredPersistentUsers();
   const { key: userKey, sessionId, userStore, persistent, save } = getOrCreateUserStore({ ip: clientIp });
-  let conversation = ensureConversation(userStore, conversationId);
-
-  if (!conversationId || !userStore.conversations.some((item) => item.id === conversationId)) {
-    conversation = userStore.conversations[0];
-  }
+  const selectedCharacter = resolveCharacter(config, requestedCharacterId);
+  const characterId = selectedCharacter.id;
+  const characterChatConfig = { ...chatConfig, systemPrompt: selectedCharacter.systemPrompt };
+  const conversation = getOrCreateCharacterConversation(userStore, conversationId, characterId);
+  conversation.characterId = characterId;
 
   let imageDecision;
   try {
@@ -519,14 +595,14 @@ async function handleChat(req, res) {
       message,
       "",
       `用户想听你保存的 AI 翻唱《${song.title}》。`,
-      "请以流萤的身份自然回复一句很短的话，像真人聊天一样，不要提到后台、曲库、功能、音频文件，也不要说你是 AI。"
+      `请以${selectedCharacter.name}的身份自然回复一句很短的话，像真人聊天一样，不要提到后台、曲库、功能、音频文件，也不要说你是 AI。`
     ].join("\n");
     const requestBody = {
       model: chatConfig.model,
       temperature: Number(chatConfig.temperature) || 0.8,
       max_tokens: Math.min(Number(chatConfig.maxTokens) || 800, 160),
       stream: false,
-      messages: buildChatMessages(chatConfig, conversation.messages || [], songReplyPrompt, false)
+      messages: buildChatMessages(characterChatConfig, conversation.messages || [], songReplyPrompt, false)
     };
 
     let apiResult;
@@ -554,9 +630,10 @@ async function handleChat(req, res) {
     recordTokenUsage({ ...usage, ip: clientIp });
 
     const now = Date.now();
-    appendConversationMessage(conversation, "user", message, now);
-    appendConversationMessage(conversation, "assistant", reply, now + 1);
+    appendConversationMessage(conversation, "user", message, now, { characterId });
+    appendConversationMessage(conversation, "assistant", reply, now + 1, { characterId });
     appendConversationMessage(conversation, "assistant", "", now + 2, {
+      characterId,
       kind: "song",
       songId: song.id,
       songTitle: song.title,
@@ -576,11 +653,10 @@ async function handleChat(req, res) {
       model: chatConfig.model,
       persistent,
       userAvatarUrl: resolveUserAvatarUrl(config, userStore),
+      assistantAvatarUrl: resolveAvatarUrl(config, "assistant", characterId),
+      characterId,
       conversationId: conversation.id,
-      conversations: userStore.conversations
-        .slice()
-        .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
-        .map(sanitizeConversation)
+      conversations: getConversationList(userStore, characterId)
     });
     return;
   }
@@ -593,8 +669,8 @@ async function handleChat(req, res) {
     if (customImageApi.provided && !usingCustomImageApi) {
       const reply = "自定义图片 API 需要填写 Base URL 和模型名称；API Key 可按接口要求填写。";
       const now = Date.now();
-      appendConversationMessage(conversation, "user", message, now);
-      appendConversationMessage(conversation, "assistant", reply, now + 1);
+      appendConversationMessage(conversation, "user", message, now, { characterId });
+      appendConversationMessage(conversation, "assistant", reply, now + 1, { characterId });
       userStore.updatedAt = now + 1;
       save();
       sendJson(res, 200, {
@@ -604,7 +680,8 @@ async function handleChat(req, res) {
         persistent,
         userAvatarUrl: resolveUserAvatarUrl(config, userStore),
         conversationId: conversation.id,
-        conversations: getConversationList(userStore)
+        characterId,
+        conversations: getConversationList(userStore, characterId)
       });
       return;
     }
@@ -612,8 +689,8 @@ async function handleChat(req, res) {
     if (!imageConfig.baseUrl || !imageConfig.model) {
       const reply = "嗯……我知道你想要一张图片。不过这边还没有接上图片接口。等后台把图片 API 的 Base URL 和模型名称配置好，我就能试着画给你。";
       const now = Date.now();
-      appendConversationMessage(conversation, "user", message, now);
-      appendConversationMessage(conversation, "assistant", reply, now + 1);
+      appendConversationMessage(conversation, "user", message, now, { characterId });
+      appendConversationMessage(conversation, "assistant", reply, now + 1, { characterId });
       userStore.updatedAt = now + 1;
       save();
       sendJson(res, 200, {
@@ -623,17 +700,18 @@ async function handleChat(req, res) {
         persistent,
         userAvatarUrl: resolveUserAvatarUrl(config, userStore),
         conversationId: conversation.id,
-        conversations: getConversationList(userStore)
+        characterId,
+        conversations: getConversationList(userStore, characterId)
       });
       return;
     }
 
-    const promptResult = buildImagePrompt(message, conversation.messages || []);
+    const promptResult = buildImagePrompt(message, conversation.messages || [], selectedCharacter);
     if (!promptResult.ok) {
       const reply = promptResult.reply || "嗯……这张图还缺一点内容。可以告诉我，你想画什么吗？";
       const now = Date.now();
-      appendConversationMessage(conversation, "user", message, now);
-      appendConversationMessage(conversation, "assistant", reply, now + 1);
+      appendConversationMessage(conversation, "user", message, now, { characterId });
+      appendConversationMessage(conversation, "assistant", reply, now + 1, { characterId });
       userStore.updatedAt = now + 1;
       save();
       sendJson(res, 200, {
@@ -643,7 +721,8 @@ async function handleChat(req, res) {
         persistent,
         userAvatarUrl: resolveUserAvatarUrl(config, userStore),
         conversationId: conversation.id,
-        conversations: getConversationList(userStore)
+        characterId,
+        conversations: getConversationList(userStore, characterId)
       });
       return;
     }
@@ -655,8 +734,8 @@ async function handleChat(req, res) {
         const waitMinutes = Math.ceil(cooldownMs / 60000);
         const reply = `图片生成需要稍等一下……大约 ${waitMinutes} 分钟后再试。`;
         const now = Date.now();
-        appendConversationMessage(conversation, "user", message, now);
-        appendConversationMessage(conversation, "assistant", reply, now + 1);
+        appendConversationMessage(conversation, "user", message, now, { characterId });
+        appendConversationMessage(conversation, "assistant", reply, now + 1, { characterId });
         userStore.updatedAt = now + 1;
         save();
         sendJson(res, 200, {
@@ -666,7 +745,8 @@ async function handleChat(req, res) {
           persistent,
           userAvatarUrl: resolveUserAvatarUrl(config, userStore),
           conversationId: conversation.id,
-          conversations: getConversationList(userStore)
+          characterId,
+          conversations: getConversationList(userStore, characterId)
         });
         return;
       }
@@ -675,8 +755,8 @@ async function handleChat(req, res) {
       if (!dailyQuota.ok) {
         const reply = `今天的公共图片生成额度已用完（每日 ${dailyQuota.limit} 张）。你可以在右上角打开“自定义图片 API”，填入自己的接口后继续生成；接口入口：${IMAGE_DAILY_LIMIT_HELP_URL}`;
         const now = Date.now();
-        appendConversationMessage(conversation, "user", message, now);
-        appendConversationMessage(conversation, "assistant", reply, now + 1);
+        appendConversationMessage(conversation, "user", message, now, { characterId });
+        appendConversationMessage(conversation, "assistant", reply, now + 1, { characterId });
         userStore.updatedAt = now + 1;
         save();
         sendJson(res, 200, {
@@ -686,7 +766,8 @@ async function handleChat(req, res) {
           persistent,
           userAvatarUrl: resolveUserAvatarUrl(config, userStore),
           conversationId: conversation.id,
-          conversations: getConversationList(userStore)
+          characterId,
+          conversations: getConversationList(userStore, characterId)
         });
         return;
       }
@@ -698,8 +779,9 @@ async function handleChat(req, res) {
     const imageJobId = generateUUID();
     const reply = "我开始画了……稍等一下。";
     const now = Date.now();
-    appendConversationMessage(conversation, "user", message, now);
+    appendConversationMessage(conversation, "user", message, now, { characterId });
     appendConversationMessage(conversation, "assistant", reply, now + 1, {
+      characterId,
       kind: "image_pending",
       imageJobId,
       imagePrompt
@@ -715,7 +797,8 @@ async function handleChat(req, res) {
       persistent,
       userAvatarUrl: resolveUserAvatarUrl(config, userStore),
       conversationId: conversation.id,
-      conversations: getConversationList(userStore)
+      characterId,
+      conversations: getConversationList(userStore, characterId)
     });
     scheduleImageJobCleanup(imageJobId);
     const imageJobPayload = {
@@ -731,6 +814,7 @@ async function handleChat(req, res) {
       config,
       clientIp,
       persistent,
+      characterId,
       trackUsage: !usingCustomImageApi,
       displayModel: displayImageModel
     };
@@ -744,7 +828,8 @@ async function handleChat(req, res) {
       persistent,
       userAvatarUrl: resolveUserAvatarUrl(config, userStore),
       conversationId: conversation.id,
-      conversations: getConversationList(userStore)
+      characterId,
+      conversations: getConversationList(userStore, characterId)
     });
     setImmediate(() => {
       runImageGenerationJob(imageJobPayload).catch((error) => {
@@ -759,7 +844,7 @@ async function handleChat(req, res) {
     temperature: Number(chatConfig.temperature) || 0.8,
     max_tokens: Number(chatConfig.maxTokens) || 800,
     stream: false,
-    messages: buildChatMessages(chatConfig, conversation.messages || [], message, false)
+    messages: buildChatMessages(characterChatConfig, conversation.messages || [], message, false)
   };
 
   let apiResult;
@@ -788,8 +873,8 @@ async function handleChat(req, res) {
   recordTokenUsage({ ...usage, ip: clientIp });
 
   const now = Date.now();
-  appendConversationMessage(conversation, "user", message, now);
-  appendConversationMessage(conversation, "assistant", reply.trim(), now + 1);
+  appendConversationMessage(conversation, "user", message, now, { characterId });
+  appendConversationMessage(conversation, "assistant", reply.trim(), now + 1, { characterId });
   userStore.updatedAt = now + 1;
   save();
 
@@ -799,30 +884,38 @@ async function handleChat(req, res) {
     model: chatConfig.model,
     persistent,
     userAvatarUrl: resolveUserAvatarUrl(config, userStore),
+    assistantAvatarUrl: resolveAvatarUrl(config, "assistant", characterId),
+    characterId,
     conversationId: conversation.id,
-    conversations: userStore.conversations
-      .slice()
-      .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
-      .map(sanitizeConversation)
+    conversations: getConversationList(userStore, characterId)
   });
 }
 
 async function handleSessionState(req, res) {
   const body = req.method === "POST" ? await parseBody(req) : {};
   const ip = getClientIp(req);
+  const config = loadConfig();
+  const selectedCharacter = resolveCharacter(config, normalizeCharacterId(body.characterId));
+  const characterId = selectedCharacter.id;
 
   cleanupExpiredPersistentUsers();
   const { userStore, persistent, save } = getOrCreateUserStore({ ip });
+  const ensuredConversation = getOrCreateCharacterConversation(userStore, "", characterId);
+  ensuredConversation.characterId = characterId;
+  userStore.updatedAt = Date.now();
   save();
 
   const conversations = userStore.conversations
     .slice()
+    .filter((conversation) => (conversation.characterId || "firefly") === characterId)
     .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
-  const activeConversation = conversations[0];
+  const activeConversation = conversations[0] || ensuredConversation;
 
   sendJson(res, 200, {
     persistent,
-    userAvatarUrl: resolveUserAvatarUrl(loadConfig(), userStore),
+    userAvatarUrl: resolveUserAvatarUrl(config, userStore),
+    assistantAvatarUrl: resolveAvatarUrl(config, "assistant", characterId),
+    characterId,
     conversationId: activeConversation?.id || "",
     conversations: conversations.map(sanitizeConversation),
     messages: Array.isArray(activeConversation?.messages) ? activeConversation.messages : [],
@@ -833,10 +926,13 @@ async function handleSessionState(req, res) {
 async function handleConversationCreate(req, res) {
   const body = await parseBody(req);
   const title = typeof body.title === "string" ? body.title.trim() : "新对话";
+  const config = loadConfig();
+  const selectedCharacter = resolveCharacter(config, normalizeCharacterId(body.characterId));
+  const characterId = selectedCharacter.id;
   cleanupExpiredPersistentUsers();
   const { userStore, persistent, save } = getOrCreateUserStore({ ip: getClientIp(req) });
   const now = Date.now();
-  const conversation = createConversation({ title: title || "新对话", now });
+  const conversation = createConversation({ title: title || "新对话", now, characterId });
   userStore.conversations.unshift(conversation);
   userStore.updatedAt = now;
   save();
@@ -844,21 +940,29 @@ async function handleConversationCreate(req, res) {
   sendJson(res, 200, {
     ok: true,
     persistent,
-    userAvatarUrl: resolveUserAvatarUrl(loadConfig(), userStore),
+    userAvatarUrl: resolveUserAvatarUrl(config, userStore),
+    assistantAvatarUrl: resolveAvatarUrl(config, "assistant", characterId),
+    characterId,
     conversationId: conversation.id,
     conversation: sanitizeConversation(conversation),
-    conversations: userStore.conversations.map(sanitizeConversation)
+    conversations: getConversationList(userStore, characterId)
   });
 }
 
 async function handleConversationGet(req, res) {
   const url = new URL(req.url, `http://${req.headers.host}`);
   const conversationId = (url.searchParams.get("conversationId") || "").trim();
+  const config = loadConfig();
+  const selectedCharacter = resolveCharacter(config, normalizeCharacterId(url.searchParams.get("characterId")));
+  const characterId = selectedCharacter.id;
   cleanupExpiredPersistentUsers();
-  const { userStore } = getOrCreateUserStore({ ip: getClientIp(req) });
-  const conversation = ensureConversation(userStore, conversationId);
+  const { userStore, save } = getOrCreateUserStore({ ip: getClientIp(req) });
+  const conversation = getOrCreateCharacterConversation(userStore, conversationId, characterId);
+  conversation.characterId = characterId;
+  save();
 
   sendJson(res, 200, {
+    characterId,
     conversationId: conversation.id,
     messages: Array.isArray(conversation.messages) ? conversation.messages : []
   });
@@ -874,18 +978,23 @@ async function handleConversationDelete(req, res) {
   }
 
   cleanupExpiredPersistentUsers();
+  const config = loadConfig();
+  const selectedCharacter = resolveCharacter(config, normalizeCharacterId(body.characterId));
+  const characterId = selectedCharacter.id;
   const { userStore, save } = getOrCreateUserStore({ ip: getClientIp(req) });
   userStore.conversations = (userStore.conversations || []).filter((item) => item.id !== conversationId);
-  if (userStore.conversations.length === 0) {
-    userStore.conversations = [createConversation()];
+  if (!userStore.conversations.some((item) => (item.characterId || "firefly") === characterId)) {
+    userStore.conversations.unshift(createConversation({ characterId }));
   }
   userStore.updatedAt = Date.now();
   save();
 
+  const conversations = getConversationList(userStore, characterId);
   sendJson(res, 200, {
     ok: true,
-    conversations: userStore.conversations.map(sanitizeConversation),
-    conversationId: userStore.conversations[0].id
+    characterId,
+    conversations,
+    conversationId: conversations[0]?.id || ""
   });
 }
 
@@ -1248,7 +1357,7 @@ async function handleAdminConfigPut(req, res) {
   ].some(hasField);
   const updatesSiteConfig = [
     "siteName", "siteSubtitle", "assistantAvatarPath",
-    "userAvatarPath", "systemPrompt", "adminPassword",
+    "userAvatarPath", "systemPrompt", "defaultCharacterId", "characters", "adminPassword",
     "announcementEnabled", "announcementTitle", "announcementHtml"
   ].some(hasField);
   const manualModels = Array.isArray(body.chatAvailableModels)
@@ -1267,6 +1376,14 @@ async function handleAdminConfigPut(req, res) {
   const semanticManualModels = Array.isArray(body.semanticAvailableModels)
     ? body.semanticAvailableModels.filter((item) => typeof item === "string" && item.trim())
     : Array.isArray(config.semanticAvailableModels) ? config.semanticAvailableModels : [];
+  const nextCharacters = hasField("characters")
+    ? normalizeCharacters(Array.isArray(body.characters) ? body.characters : [], config)
+    : normalizeCharacters(config.characters, config);
+  const nextDefaultCharacter = resolveCharacter({
+    ...config,
+    characters: nextCharacters,
+    defaultCharacterId: hasField("defaultCharacterId") ? body.defaultCharacterId : config.defaultCharacterId
+  }, hasField("defaultCharacterId") ? body.defaultCharacterId : config.defaultCharacterId);
 
   const nextConfig = {
     ...config,
@@ -1274,6 +1391,8 @@ async function handleAdminConfigPut(req, res) {
     siteSubtitle: hasField("siteSubtitle") ? String(body.siteSubtitle || "").trim() || config.siteSubtitle : config.siteSubtitle,
     assistantAvatarPath: hasField("assistantAvatarPath") ? String(body.assistantAvatarPath || "").trim() || require("./constants").DEFAULT_ASSISTANT_AVATAR : config.assistantAvatarPath,
     userAvatarPath: hasField("userAvatarPath") ? String(body.userAvatarPath || "").trim() || require("./constants").DEFAULT_USER_AVATAR : config.userAvatarPath,
+    defaultCharacterId: nextDefaultCharacter.id,
+    characters: nextCharacters,
     chatBaseUrl: hasField("chatBaseUrl") ? String(body.chatBaseUrl || "").trim() : hasField("baseUrl") ? String(body.baseUrl || "").trim() : config.chatBaseUrl || config.baseUrl,
     chatModel: hasField("chatModel") ? String(body.chatModel || "").trim() : hasField("model") ? String(body.model || "").trim() : config.chatModel || config.model,
     baseUrl: hasField("chatBaseUrl") ? String(body.chatBaseUrl || "").trim() : hasField("baseUrl") ? String(body.baseUrl || "").trim() : config.baseUrl,
@@ -1349,6 +1468,11 @@ async function handleAdminConfigPut(req, res) {
 
   if (updatesSiteConfig && !nextConfig.systemPrompt) {
     sendJson(res, 400, { error: "系统提示词不能为空。" });
+    return;
+  }
+
+  if (updatesSiteConfig && (!Array.isArray(nextConfig.characters) || nextConfig.characters.length === 0)) {
+    sendJson(res, 400, { error: "至少需要保留一个角色配置。" });
     return;
   }
 

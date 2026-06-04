@@ -3,14 +3,19 @@ const { CONFIG_PATH, DATA_DIR, USERS_DIR, SONGS_DIR, GENERATED_IMAGES_DIR, SONGS
 const { encryptSecret, decryptSecret, hashPassword } = require("./crypto");
 const { writeFileAtomic, writeJsonAtomic } = require("./file-store");
 const { normalizeImageDailyLimit } = require("./image-limit");
+const { createDefaultCharacters, normalizeCharacterId, normalizeCharacters, resolveCharacter } = require("./characters");
 
 function createDefaultConfig() {
   const adminPassword = String(process.env.ADMIN_PASSWORD || "").trim();
+  const assistantAvatarPath = "public/ly.png";
+  const systemPrompt = "你是流萤。请用自然、克制、亲近的语气和用户对话。";
   return {
-    siteName: "流萤",
-    siteSubtitle: "会找到的，属于我的梦……",
-    assistantAvatarPath: "public/ly.png",
+    siteName: "多角色聊天",
+    siteSubtitle: "选择一个角色开始对话",
+    assistantAvatarPath,
     userAvatarPath: "public/ly.png",
+    defaultCharacterId: "firefly",
+    characters: createDefaultCharacters({ assistantAvatarPath, systemPrompt }),
     chatBaseUrl: "",
     chatModel: "",
     chatAvailableModels: [],
@@ -24,7 +29,7 @@ function createDefaultConfig() {
     semanticAvailableModels: [],
     temperature: 0.8,
     maxTokens: 800,
-    systemPrompt: "你是流萤。请用自然、克制、亲近的语气和用户对话。",
+    systemPrompt,
     announcementEnabled: false,
     announcementTitle: "公告",
     announcementHtml: "",
@@ -123,6 +128,11 @@ function normalizeConfig(config) {
   nextConfig.announcementHtml = typeof nextConfig.announcementHtml === "string" ? nextConfig.announcementHtml : "";
   nextConfig.cacheMaxSize = Number(nextConfig.cacheMaxSize) || 500;
   nextConfig.imageDailyLimit = normalizeImageDailyLimit(nextConfig.imageDailyLimit);
+  nextConfig.characters = normalizeCharacters(nextConfig.characters, nextConfig);
+  nextConfig.defaultCharacterId = resolveCharacter({
+    ...nextConfig,
+    defaultCharacterId: normalizeCharacterId(nextConfig.defaultCharacterId)
+  }).id;
   return nextConfig;
 }
 

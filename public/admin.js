@@ -7,8 +7,10 @@ const currentCacheSize = document.getElementById("currentCacheSize");
 const currentCacheMax = document.getElementById("currentCacheMax");
 const apiConfigForm = document.getElementById("apiConfigForm");
 const siteConfigForm = document.getElementById("siteConfigForm");
+const roleConfigForm = document.getElementById("roleConfigForm");
 const apiSaveStatus = document.getElementById("apiSaveStatus");
 const siteSaveStatus = document.getElementById("siteSaveStatus");
+const roleSaveStatus = document.getElementById("roleSaveStatus");
 const fetchModelsButton = document.getElementById("fetchModelsButton");
 const fetchModelsStatus = document.getElementById("fetchModelsStatus");
 const availableModelsList = document.getElementById("availableModelsList");
@@ -53,19 +55,61 @@ const apiFields = {
 const siteFields = {
   siteName: document.getElementById("siteNameInput"),
   siteSubtitle: document.getElementById("siteSubtitleInput"),
-  assistantAvatarPath: document.getElementById("assistantAvatarPathInput"),
-  userAvatarPath: document.getElementById("userAvatarPathInput"),
   announcementEnabled: document.getElementById("announcementEnabledInput"),
   announcementTitle: document.getElementById("announcementTitleInput"),
   announcementHtml: document.getElementById("announcementHtmlInput"),
-  systemPrompt: document.getElementById("systemPromptInput"),
   adminPassword: document.getElementById("adminPasswordInput")
 };
+
+const roleFields = {
+  id: document.getElementById("roleIdInput"),
+  name: document.getElementById("roleNameInput"),
+  title: document.getElementById("roleTitleInput"),
+  subtitle: document.getElementById("roleSubtitleInput"),
+  avatarPath: document.getElementById("roleAvatarPathInput"),
+  portraitUrl: document.getElementById("rolePortraitUrlInput"),
+  portraitMirror: document.getElementById("rolePortraitMirrorInput"),
+  portraitOffsetX: document.getElementById("rolePortraitOffsetXInput"),
+  portraitScale: document.getElementById("rolePortraitScaleInput"),
+  eyebrow: document.getElementById("roleEyebrowInput"),
+  quoteLabel: document.getElementById("roleQuoteLabelInput"),
+  quote: document.getElementById("roleQuoteInput"),
+  traits: document.getElementById("roleTraitsInput"),
+  greeting: document.getElementById("roleGreetingInput"),
+  systemPrompt: document.getElementById("roleSystemPromptInput"),
+  imagePromptHints: document.getElementById("roleImagePromptHintsInput")
+};
+
+const roleThemeFields = {
+  accent: document.getElementById("roleThemeAccentInput"),
+  accentBright: document.getElementById("roleThemeAccentBrightInput"),
+  accentDim: document.getElementById("roleThemeAccentDimInput"),
+  accentDeep: document.getElementById("roleThemeAccentDeepInput"),
+  bg: document.getElementById("roleThemeBgInput"),
+  bgWarm: document.getElementById("roleThemeBgWarmInput"),
+  surface: document.getElementById("roleThemeSurfaceInput"),
+  border: document.getElementById("roleThemeBorderInput"),
+  borderLight: document.getElementById("roleThemeBorderLightInput"),
+  text: document.getElementById("roleThemeTextInput"),
+  textMid: document.getElementById("roleThemeTextMidInput"),
+  textDim: document.getElementById("roleThemeTextDimInput"),
+  visualStart: document.getElementById("roleThemeVisualStartInput"),
+  visualMid: document.getElementById("roleThemeVisualMidInput"),
+  visualEnd: document.getElementById("roleThemeVisualEndInput")
+};
+
+const defaultCharacterIdSelect = document.getElementById("defaultCharacterIdSelect");
+const roleList = document.getElementById("roleList");
+const addRoleButton = document.getElementById("addRoleButton");
+const deleteRoleButton = document.getElementById("deleteRoleButton");
 
 let statsTimer = null;
 let adminInitialized = false;
 let tokenRange = "1d";
 let latestAudit = null;
+let latestConfig = null;
+let roleCharacters = [];
+let activeRoleId = "";
 
 // 分页状态
 let auditCurrentPage = 1;
@@ -91,6 +135,257 @@ const auditTotalSessions = document.getElementById("auditTotalSessions");
 
 // 记录展开状态
 const expandedIps = new Set();
+
+const ROLE_THEME_DEFAULTS = {
+  accent: "#111111",
+  accentBright: "#000000",
+  accentDim: "#555555",
+  accentDeep: "#000000",
+  bg: "#f6f6f6",
+  bgWarm: "#ffffff",
+  surface: "#ffffff",
+  border: "#d4d4d4",
+  borderLight: "#e8e8e8",
+  text: "#111111",
+  textMid: "#444444",
+  textDim: "#777777",
+  visualStart: "#eeeeee",
+  visualMid: "#ffffff",
+  visualEnd: "#e7e7e7"
+};
+
+function normalizeRoleId(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48);
+}
+
+function normalizeRoleText(value, fallback = "") {
+  const text = typeof value === "string" ? value.trim() : "";
+  return text || fallback;
+}
+
+function normalizeRoleBoolean(value) {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value !== 0;
+  if (typeof value === "string") {
+    return ["true", "1", "yes", "on"].includes(value.trim().toLowerCase());
+  }
+  return false;
+}
+
+function normalizeRoleNumber(value, fallback = 0, min = -320, max = 320) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return fallback;
+  return Math.min(max, Math.max(min, Math.round(numeric)));
+}
+
+function normalizeRoleScale(value, fallback = 1, min = 0.6, max = 1.6) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return fallback;
+  const clamped = Math.min(max, Math.max(min, numeric));
+  return Math.round(clamped * 100) / 100;
+}
+
+function normalizeRoleArray(value) {
+  const source = Array.isArray(value)
+    ? value
+    : String(value || "").split(/\r?\n|,|，/);
+  return source.map((item) => String(item || "").trim()).filter(Boolean);
+}
+
+function normalizeRoleTheme(theme = {}) {
+  const result = {};
+  for (const key of Object.keys(ROLE_THEME_DEFAULTS)) {
+    const value = String(theme?.[key] || "").trim();
+    result[key] = /^#[0-9a-f]{6}$/i.test(value) ? value : ROLE_THEME_DEFAULTS[key];
+  }
+  return result;
+}
+
+function normalizeRole(role = {}, index = 0) {
+  const id = normalizeRoleId(role.id) || `role-${index + 1}`;
+  const name = normalizeRoleText(role.name, id);
+  return {
+    id,
+    name,
+    title: normalizeRoleText(role.title, `${name} · 在线聊天`),
+    subtitle: normalizeRoleText(role.subtitle, ""),
+    avatarPath: normalizeRoleText(role.avatarPath, "public/favicon.svg"),
+    portraitUrl: normalizeRoleText(role.portraitUrl, ""),
+    portraitMirror: normalizeRoleBoolean(role.portraitMirror),
+    portraitOffsetX: normalizeRoleNumber(role.portraitOffsetX),
+    portraitScale: normalizeRoleScale(role.portraitScale),
+    eyebrow: normalizeRoleText(role.eyebrow, "Character Channel"),
+    quoteLabel: normalizeRoleText(role.quoteLabel, "角色介绍"),
+    quote: normalizeRoleText(role.quote, ""),
+    traits: normalizeRoleArray(role.traits),
+    greeting: normalizeRoleText(role.greeting, `你好，我是${name}。`),
+    systemPrompt: normalizeRoleText(role.systemPrompt, `你是${name}。请保持角色口吻与用户对话。`),
+    imagePromptHints: normalizeRoleArray(role.imagePromptHints),
+    theme: normalizeRoleTheme(role.theme)
+  };
+}
+
+function createBlankRole() {
+  let index = roleCharacters.length + 1;
+  let id = `role-${index}`;
+  const existing = new Set(roleCharacters.map((role) => role.id));
+  while (existing.has(id)) {
+    index += 1;
+    id = `role-${index}`;
+  }
+  return normalizeRole({
+    id,
+    name: `新角色${index}`,
+    title: `新角色${index} · 在线聊天`,
+    avatarPath: "public/favicon.svg"
+  }, index - 1);
+}
+
+function getRoleAvatarUrl(role) {
+  const raw = String(role?.avatarPath || "").trim();
+  if (!raw) return "/api/avatar/assistant";
+  if (/^(?:https?:)?\/\//i.test(raw) || raw.startsWith("/")) return raw;
+  const normalized = raw.replace(/\\/g, "/");
+  return normalized.startsWith("public/") ? `/${normalized.slice(7)}` : "/api/avatar/assistant";
+}
+
+function setRoleStatus(text = "", isError = false) {
+  if (!roleSaveStatus) return;
+  roleSaveStatus.textContent = text;
+  roleSaveStatus.style.opacity = text ? "1" : "";
+  roleSaveStatus.style.color = isError ? "#d44" : "var(--accent)";
+}
+
+function updateActiveRoleFromEditor() {
+  if (!activeRoleId) return true;
+  const index = roleCharacters.findIndex((role) => role.id === activeRoleId);
+  if (index < 0) return true;
+  const nextId = normalizeRoleId(roleFields.id?.value) || activeRoleId;
+  const duplicate = roleCharacters.some((role, roleIndex) => roleIndex !== index && role.id === nextId);
+  if (duplicate) {
+    setRoleStatus(`角色 ID ${nextId} 已存在`, true);
+    return false;
+  }
+  const current = roleCharacters[index];
+  const nextRole = normalizeRole({
+    ...current,
+    id: nextId,
+    name: roleFields.name?.value,
+    title: roleFields.title?.value,
+    subtitle: roleFields.subtitle?.value,
+    avatarPath: roleFields.avatarPath?.value,
+    portraitUrl: roleFields.portraitUrl?.value,
+    portraitMirror: roleFields.portraitMirror?.checked,
+    portraitOffsetX: roleFields.portraitOffsetX?.value,
+    portraitScale: roleFields.portraitScale?.value,
+    eyebrow: roleFields.eyebrow?.value,
+    quoteLabel: roleFields.quoteLabel?.value,
+    quote: roleFields.quote?.value,
+    traits: roleFields.traits?.value,
+    greeting: roleFields.greeting?.value,
+    systemPrompt: roleFields.systemPrompt?.value,
+    imagePromptHints: roleFields.imagePromptHints?.value,
+    theme: Object.fromEntries(
+      Object.entries(roleThemeFields).map(([key, input]) => [key, input?.value || current.theme?.[key]])
+    )
+  }, index);
+  roleCharacters[index] = nextRole;
+  activeRoleId = nextRole.id;
+  if (defaultCharacterIdSelect?.value === current.id) {
+    defaultCharacterIdSelect.value = nextRole.id;
+  }
+  return true;
+}
+
+function renderDefaultRoleOptions(preferredId = "") {
+  if (!defaultCharacterIdSelect) return;
+  const previous = preferredId || defaultCharacterIdSelect.value || latestConfig?.defaultCharacterId || activeRoleId;
+  defaultCharacterIdSelect.innerHTML = roleCharacters
+    .map((role) => `<option value="${escapeHtml(role.id)}">${escapeHtml(role.name)} (${escapeHtml(role.id)})</option>`)
+    .join("");
+  defaultCharacterIdSelect.value = roleCharacters.some((role) => role.id === previous)
+    ? previous
+    : roleCharacters[0]?.id || "";
+}
+
+function renderRoleList() {
+  if (!roleList) return;
+  if (!roleCharacters.length) {
+    roleList.innerHTML = `<div class="empty-state">暂无角色</div>`;
+    return;
+  }
+  roleList.innerHTML = roleCharacters.map((role) => {
+    const active = role.id === activeRoleId ? " active" : "";
+    return `
+      <button class="role-list-item${active}" type="button" data-role-id="${escapeHtml(role.id)}">
+        <img class="role-list-avatar" src="${escapeHtml(getRoleAvatarUrl(role))}" alt="${escapeHtml(role.name)}">
+        <span>
+          <span class="role-list-name">${escapeHtml(role.name)}</span>
+          <span class="role-list-id">${escapeHtml(role.id)}</span>
+        </span>
+      </button>
+    `;
+  }).join("");
+
+  roleList.querySelectorAll("[data-role-id]").forEach((button) => {
+    button.addEventListener("click", () => {
+      if (!updateActiveRoleFromEditor()) return;
+      activeRoleId = button.getAttribute("data-role-id") || activeRoleId;
+      fillRoleEditor(activeRoleId);
+      renderDefaultRoleOptions();
+      renderRoleList();
+      setRoleStatus("");
+    });
+  });
+}
+
+function fillRoleEditor(roleId) {
+  const role = roleCharacters.find((item) => item.id === roleId) || roleCharacters[0];
+  if (!role) return;
+  activeRoleId = role.id;
+  for (const [key, input] of Object.entries(roleFields)) {
+    if (!input) continue;
+    if (key === "traits" || key === "imagePromptHints") {
+      input.value = Array.isArray(role[key]) ? role[key].join("\n") : "";
+    } else if (input.type === "checkbox") {
+      input.checked = Boolean(role[key]);
+    } else {
+      input.value = role[key] ?? "";
+    }
+  }
+  for (const [key, input] of Object.entries(roleThemeFields)) {
+    if (input) input.value = role.theme?.[key] || ROLE_THEME_DEFAULTS[key];
+  }
+  if (deleteRoleButton) {
+    deleteRoleButton.disabled = roleCharacters.length <= 1;
+  }
+}
+
+function renderRoleConfig(config) {
+  roleCharacters = (Array.isArray(config.characters) ? config.characters : [])
+    .map((role, index) => normalizeRole(role, index));
+  if (!roleCharacters.length) {
+    roleCharacters = [createBlankRole()];
+  }
+  activeRoleId = roleCharacters.some((role) => role.id === activeRoleId)
+    ? activeRoleId
+    : config.defaultCharacterId || roleCharacters[0].id;
+  if (!roleCharacters.some((role) => role.id === activeRoleId)) {
+    activeRoleId = roleCharacters[0].id;
+  }
+  renderDefaultRoleOptions();
+  if (defaultCharacterIdSelect && roleCharacters.some((role) => role.id === config.defaultCharacterId)) {
+    defaultCharacterIdSelect.value = config.defaultCharacterId;
+  }
+  fillRoleEditor(activeRoleId);
+  renderRoleList();
+  setRoleStatus("");
+}
 
 function normalizeAuditIp(ip) {
   const value = String(ip || "").trim();
@@ -258,7 +553,7 @@ function renderSongs(songs) {
       </div>
       <div class="song-info">
         <div class="song-name">${escapeHtml(song.title || "未命名歌曲")}</div>
-        <div class="song-meta">AI流萤翻唱 · ${formatFileSize(song.size)}</div>
+        <div class="song-meta">角色音频 · ${formatFileSize(song.size)}</div>
       </div>
       <div class="song-actions">
         <button class="song-play-btn" type="button" data-play-song="${escapeHtml(song.id)}" title="播放">
@@ -530,7 +825,7 @@ function formatDateTime(timestamp) {
 
 function roleLabel(role) {
   if (role === "user") return "用户";
-  if (role === "assistant") return "流萤";
+  if (role === "assistant") return "角色";
   return role || "消息";
 }
 
@@ -648,7 +943,7 @@ function renderIpAudit(data) {
                     <span class="audit-time">${formatDateTime(conversation.updatedAt)}</span>
                   </div>
                   <div style="font-size:0.72rem;color:var(--text-mid);padding:0.3rem 0;">
-                    用户 ${userMessages} 条 · 流萤 ${assistantMessages} 条 · 共 ${messages.length} 条
+                    用户 ${userMessages} 条 · 角色 ${assistantMessages} 条 · 共 ${messages.length} 条
                   </div>
                   <div class="audit-inline-actions">
                     ${auditActionButton("edit-conversation", "编辑", `data-user-key="${escapeHtml(session.userKey)}" data-conversation-id="${escapeHtml(conversation.id)}"`)}
@@ -995,6 +1290,7 @@ async function loadConfig() {
     return;
   }
   const config = await response.json();
+  latestConfig = config;
 
   for (const [key, input] of Object.entries(apiFields)) {
     if (key === "chatApiKey" || key === "imageApiKey" || key === "semanticApiKey") {
@@ -1027,6 +1323,7 @@ async function loadConfig() {
   }
 
   cacheMaxSizeInput.value = config.cacheMaxSize || 500;
+  renderRoleConfig(config);
 
   const chatModels = Array.isArray(config.chatAvailableModels) ? config.chatAvailableModels : Array.isArray(config.availableModels) ? config.availableModels : [];
   const imageModels = Array.isArray(config.imageAvailableModels) ? config.imageAvailableModels : [];
@@ -1037,6 +1334,7 @@ async function loadConfig() {
   renderImageDailyUsage(config.imageDailyUsage);
   apiSaveStatus.textContent = "";
   siteSaveStatus.textContent = "";
+  setRoleStatus("");
 }
 
 async function saveApiConfig(event) {
@@ -1091,11 +1389,11 @@ async function saveSiteConfig(event) {
   siteSaveStatus.style.opacity = "1";
   siteSaveStatus.style.color = "var(--accent)";
 
-  const payload = Object.fromEntries(
-    Object.entries(siteFields)
-      .filter(([, input]) => Boolean(input))
-      .map(([key, input]) => [key, input.type === "checkbox" ? input.checked : input.value])
-  );
+  const payload = {};
+  for (const [key, input] of Object.entries(siteFields)) {
+    if (!input) continue;
+    payload[key] = input.type === "checkbox" ? input.checked : input.value;
+  }
 
   payload.cacheMaxSize = parseInt(cacheMaxSizeInput.value) || 500;
 
@@ -1119,6 +1417,80 @@ async function saveSiteConfig(event) {
 
   siteSaveStatus.textContent = "✓ 已保存";
   siteSaveStatus.style.color = "var(--accent)";
+}
+
+async function saveRoleConfig(event) {
+  event.preventDefault();
+  const previousActiveRoleId = activeRoleId;
+  const previousDefaultRoleId = defaultCharacterIdSelect?.value || "";
+  if (!updateActiveRoleFromEditor()) return;
+  renderDefaultRoleOptions(previousDefaultRoleId === previousActiveRoleId ? activeRoleId : previousDefaultRoleId);
+  if (!roleCharacters.length) {
+    setRoleStatus("至少需要保留一个角色", true);
+    return;
+  }
+  const defaultCharacterId = defaultCharacterIdSelect?.value || roleCharacters[0].id;
+  const defaultRole = roleCharacters.find((role) => role.id === defaultCharacterId) || roleCharacters[0];
+  if (!defaultRole?.systemPrompt) {
+    setRoleStatus("默认角色系统提示词不能为空", true);
+    return;
+  }
+
+  setRoleStatus("保存中…");
+  const payload = {
+    defaultCharacterId: defaultRole.id,
+    systemPrompt: defaultRole.systemPrompt,
+    characters: roleCharacters
+  };
+
+  const response = await fetch("/api/admin/config", {
+    method: "PUT",
+    headers: authHeaders(),
+    body: JSON.stringify(payload)
+  });
+
+  if (response.status === 401) {
+    window.location.reload();
+    return;
+  }
+
+  const data = await response.json();
+  if (!response.ok) {
+    setRoleStatus(data.error || "保存失败", true);
+    return;
+  }
+
+  latestConfig = data.config || latestConfig;
+  renderRoleConfig(latestConfig || { characters: roleCharacters, defaultCharacterId: defaultRole.id });
+  setRoleStatus("✓ 已保存");
+}
+
+function addRole() {
+  if (!updateActiveRoleFromEditor()) return;
+  const role = createBlankRole();
+  roleCharacters.push(role);
+  activeRoleId = role.id;
+  renderDefaultRoleOptions();
+  fillRoleEditor(activeRoleId);
+  renderRoleList();
+  setRoleStatus("已新增角色，保存后生效");
+}
+
+function deleteActiveRole() {
+  if (roleCharacters.length <= 1) {
+    setRoleStatus("至少需要保留一个角色", true);
+    return;
+  }
+  const role = roleCharacters.find((item) => item.id === activeRoleId);
+  if (!role) return;
+  const confirmed = confirm(`确定删除角色「${role.name}」吗？`);
+  if (!confirmed) return;
+  roleCharacters = roleCharacters.filter((item) => item.id !== activeRoleId);
+  activeRoleId = roleCharacters[0]?.id || "";
+  renderDefaultRoleOptions();
+  fillRoleEditor(activeRoleId);
+  renderRoleList();
+  setRoleStatus("已删除角色，保存后生效");
 }
 
 async function fetchModels(target = "chat") {
@@ -1292,6 +1664,15 @@ async function initAdmin() {
   adminInitialized = true;
   apiConfigForm.addEventListener("submit", saveApiConfig);
   siteConfigForm.addEventListener("submit", saveSiteConfig);
+  roleConfigForm?.addEventListener("submit", saveRoleConfig);
+  addRoleButton?.addEventListener("click", addRole);
+  deleteRoleButton?.addEventListener("click", deleteActiveRole);
+  [...Object.values(roleFields), ...Object.values(roleThemeFields), defaultCharacterIdSelect]
+    .filter(Boolean)
+    .forEach((input) => {
+      input.addEventListener("input", () => setRoleStatus("未保存"));
+      input.addEventListener("change", () => setRoleStatus("未保存"));
+    });
   songUploadForm?.addEventListener("submit", uploadSong);
 
   if (songFileInput && songFileText) {

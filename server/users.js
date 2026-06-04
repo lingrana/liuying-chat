@@ -38,6 +38,7 @@ function normalizeConversationMessage(message) {
     role: typeof message.role === "string" && message.role.trim() ? message.role.trim() : "assistant",
     content: typeof message.content === "string" ? message.content : "",
     createdAt: Number.isFinite(message.createdAt) ? message.createdAt : Date.now(),
+    characterId: typeof message.characterId === "string" ? message.characterId : undefined,
     kind: typeof message.kind === "string" ? message.kind : undefined,
     imageUrl: typeof message.imageUrl === "string" ? message.imageUrl : undefined,
     imagePrompt: typeof message.imagePrompt === "string" ? message.imagePrompt : undefined,
@@ -60,6 +61,7 @@ function normalizeConversationRecord(conversation) {
   return {
     id: typeof conversation.id === "string" && conversation.id.trim() ? conversation.id.trim() : generateUUID(),
     title: typeof conversation.title === "string" && conversation.title.trim() ? conversation.title.trim() : "新对话",
+    characterId: typeof conversation.characterId === "string" && conversation.characterId.trim() ? conversation.characterId.trim() : "firefly",
     createdAt: Number.isFinite(conversation.createdAt) ? conversation.createdAt : updatedAt,
     updatedAt,
     messages
@@ -133,10 +135,11 @@ function getIpUserKey(ip) {
   return hashStableId(`ip:${String(ip || "unknown").trim()}`);
 }
 
-function createConversation({ title = "新对话", now = Date.now() } = {}) {
+function createConversation({ title = "新对话", now = Date.now(), characterId = "firefly" } = {}) {
   return normalizeConversationRecord({
     id: generateUUID(),
     title,
+    characterId,
     createdAt: now,
     updatedAt: now,
     messages: []
@@ -147,6 +150,7 @@ function sanitizeConversation(conversation) {
   return {
     id: conversation.id,
     title: conversation.title,
+    characterId: conversation.characterId || "firefly",
     createdAt: conversation.createdAt,
     updatedAt: conversation.updatedAt,
     messageCount: Array.isArray(conversation.messages) ? conversation.messages.length : 0

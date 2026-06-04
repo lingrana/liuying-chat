@@ -4,6 +4,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/Node.js-18+-339933?logo=node.js&logoColor=white" alt="Node.js">
+  <img src="https://img.shields.io/badge/version-v1.0.1-brightgreen" alt="Version">
   <img src="https://img.shields.io/badge/License-MIT-blue" alt="License">
   <img src="https://img.shields.io/badge/OpenAI-Compatible-412991?logo=openai&logoColor=white" alt="OpenAI Compatible">
 </p>
@@ -44,8 +45,8 @@
 
 ```bash
 # 克隆仓库
-git clone https://github.com/your-username/firefly-chat.git
-cd firefly-chat
+git clone https://github.com/lingrana/chat.git
+cd chat
 
 # 安装依赖
 npm install
@@ -114,10 +115,12 @@ firefly-chat/
 │   ├── index.html       # 前台聊天页
 │   ├── app.js           # 前台逻辑
 │   ├── admin.html       # 后台管理页
-│   └── admin.js         # 后台逻辑
+│   ├── admin.js         # 后台逻辑
+│   └── characters/      # 角色头像资源
 ├── server/
 │   ├── index.js         # HTTP 服务入口
 │   ├── routes.js        # 路由处理
+│   ├── characters.js    # 角色配置
 │   ├── config.js        # 配置管理
 │   ├── users.js         # 用户管理
 │   ├── songs.js         # 歌曲管理
